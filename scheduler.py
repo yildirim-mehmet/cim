@@ -139,15 +139,30 @@ class DutyScheduler:
         
         return False
     
-    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value):
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, target_date, existing_schedule, day_type, monthly_stats, personnel_ids):
+        """
+        Gelişmiş öncelik puanı hesaplama
+        Temel adalet + zorunlu eşleştirme bonusu + dağıtım dengeleme + tatil döngüsü
+        """
         person_stats = stats[person_id]
         
         count_diff = total_avg_count - person_stats['count']
         value_diff = total_avg_value - person_stats['total_value']
+        base_score = count_diff * 2 + value_diff
         
-        return count_diff * 2 + value_diff
+        pairing_bonus = self.calculate_pairing_bonus(person_id, target_date, existing_schedule)
+        
+        distribution_penalty = -50 if self.has_same_day_distribution_conflict(person_id, target_date, day_type, monthly_stats) else 0
+        
+        cycle_bonus = 100 if self.should_prioritize_for_holiday_cycle(person_id, target_date, day_type, personnel_ids, existing_schedule) else 0
+        
+        return base_score + pairing_bonus + distribution_penalty + cycle_bonus
     
     def generate_schedule(self, year, month):
+        """
+        Gelişmiş nöbet programı oluşturma
+        Zorunlu eşleştirme, dağıtım dengeleme ve tatil döngüsü ile
+        """
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
         holidays = self.get_holidays(year, month)
@@ -155,6 +170,7 @@ class DutyScheduler:
         
         personnel_ids = [p[0] for p in personnel]
         stats = self.get_personnel_duty_stats(personnel_ids)
+        monthly_stats = self.get_monthly_duty_stats(personnel_ids, year, month)
         
         total_count = sum(s['count'] for s in stats.values())
         total_value = sum(s['total_value'] for s in stats.values())
@@ -181,6 +197,7 @@ class DutyScheduler:
                 day_value_id = self.get_weekday_id(weekday)
             
             day_info = day_values[day_value_id]
+            day_type = day_info['name']
             
             eligible_personnel = []
             for person_id in personnel_ids:
@@ -200,7 +217,13 @@ class DutyScheduler:
                 if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                     continue
                 
-                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                if self.has_month_boundary_consecutive_conflict(person_id, current_date):
+                    continue
+                
+                priority_score = self.calculate_priority_score(
+                    person_id, stats, avg_count, avg_value, current_date, 
+                    schedule, day_type, monthly_stats, personnel_ids
+                )
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
@@ -212,6 +235,12 @@ class DutyScheduler:
                 
                 stats[selected_person_id]['count'] += 1
                 stats[selected_person_id]['total_value'] += day_info['value']
+                
+                if selected_person_id not in monthly_stats:
+                    monthly_stats[selected_person_id] = {}
+                if day_type not in monthly_stats[selected_person_id]:
+                    monthly_stats[selected_person_id][day_type] = 0
+                monthly_stats[selected_person_id][day_type] += 1
             else:
                 schedule.append((current_date, None, day_info['name']))
         
@@ -240,6 +269,189 @@ class DutyScheduler:
         conn.commit()
         conn.close()
     
+    def get_monthly_duty_stats(self, personnel_ids, year, month):
+        """
+        Aylık nöbet istatistiklerini getir - Dağıtım dengeleme için
+        Her personelin o ay hangi gün türlerinde kaç nöbet tuttuğunu takip eder
+        """
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        stats = {}
+        for person_id in personnel_ids:
+            cursor.execute("""
+                SELECT gd.ad, COUNT(*) as count
+                FROM Nobet n
+                JOIN GunDeger gd ON n.gunDegerId = gd.id
+                WHERE n.personelId = ? AND strftime('%Y-%m', n.tarih) = ?
+                GROUP BY gd.ad
+            """, (person_id, f"{year:04d}-{month:02d}"))
+            
+            day_type_counts = dict(cursor.fetchall())
+            stats[person_id] = day_type_counts
+        
+        conn.close()
+        return stats
+    
+    def get_week_start(self, target_date):
+        """
+        Haftanın başlangıç tarihini hesapla (Pazartesi)
+        """
+        return target_date - timedelta(days=target_date.weekday())
+    
+    def needs_thursday_saturday_pairing(self, person_id, target_date, existing_schedule):
+        """
+        Perşembe-Cumartesi zorunlu eşleştirme kontrolü
+        Eğer kişinin o ay Perşembe nöbeti varsa, farklı haftada Cumartesi zorunludur
+        """
+        if target_date.weekday() != 5:  # Saturday = 5
+            return False
+        
+        target_week = self.get_week_start(target_date)
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.weekday() == 3 and  # Thursday = 3
+                scheduled_date.month == target_date.month and
+                self.get_week_start(scheduled_date) != target_week):
+                return True
+        
+        return False
+    
+    def needs_friday_sunday_pairing(self, person_id, target_date, existing_schedule):
+        """
+        Cuma-Pazar zorunlu eşleştirme kontrolü
+        Eğer kişinin o ay Cuma nöbeti varsa, farklı haftada Pazar zorunludur
+        """
+        if target_date.weekday() != 6:  # Sunday = 6
+            return False
+        
+        target_week = self.get_week_start(target_date)
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.weekday() == 4 and  # Friday = 4
+                scheduled_date.month == target_date.month and
+                self.get_week_start(scheduled_date) != target_week):
+                return True
+        
+        return False
+    
+    def calculate_pairing_bonus(self, person_id, target_date, existing_schedule):
+        """
+        Zorunlu eşleştirme bonusu hesapla
+        Eşleştirme gerekiyorsa yüksek bonus ver (200 puan)
+        """
+        bonus = 0
+        
+        if self.needs_thursday_saturday_pairing(person_id, target_date, existing_schedule):
+            bonus += 200  # Yüksek öncelik - zorunlu eşleştirme
+        
+        if self.needs_friday_sunday_pairing(person_id, target_date, existing_schedule):
+            bonus += 200  # Yüksek öncelik - zorunlu eşleştirme
+        
+        return bonus
+    
+    def has_same_day_distribution_conflict(self, person_id, target_date, day_type, monthly_stats):
+        """
+        Aynı gün türü dağıtım çakışması kontrolü
+        Bir kişi o ay aynı gün türünde zaten nöbet tuttuysa, mümkünse başkasına ver
+        """
+        if person_id not in monthly_stats:
+            return False
+        
+        person_monthly = monthly_stats[person_id]
+        
+        if day_type in person_monthly and person_monthly[day_type] > 0:
+            return True
+        
+        return False
+    
+    def get_holiday_cycle_position(self, person_id, personnel_ids):
+        """
+        10 kişilik tatil nöbet döngüsündeki pozisyonu hesapla
+        Personel ID'sine göre döngüsel sıralama
+        """
+        sorted_personnel = sorted(personnel_ids)
+        if person_id in sorted_personnel:
+            return sorted_personnel.index(person_id) % 10
+        return 0
+    
+    def should_prioritize_for_holiday_cycle(self, person_id, target_date, day_type, personnel_ids, existing_schedule):
+        """
+        Tatil günü döngüsel öncelik kontrolü
+        Cumartesi, Pazar ve tatil günleri için 10 kişilik döngü
+        """
+        if day_type not in ['Cumartesi', 'Pazar'] and 'Tatil' not in day_type:
+            return False
+        
+        cycle_position = self.get_holiday_cycle_position(person_id, personnel_ids)
+        
+        holiday_weekend_count = 0
+        for scheduled_date, _, scheduled_day_type in existing_schedule:
+            if (scheduled_date < target_date and 
+                (scheduled_day_type in ['Cumartesi', 'Pazar'] or 'Tatil' in scheduled_day_type)):
+                holiday_weekend_count += 1
+        
+        expected_position = holiday_weekend_count % 10
+        return cycle_position == expected_position
+    
+    def has_month_boundary_consecutive_conflict(self, person_id, target_date):
+        """
+        Ay sonu-ay başı ardışık gün çakışması kontrolü
+        Önceki ayın son günü veya sonraki ayın ilk günü kontrolü
+        """
+        if target_date.day == 1:
+            return self.get_last_month_last_duty(target_date.year, target_date.month) == person_id
+        
+        last_day = calendar.monthrange(target_date.year, target_date.month)[1]
+        if target_date.day == last_day:
+            next_month = target_date.month + 1 if target_date.month < 12 else 1
+            next_year = target_date.year if target_date.month < 12 else target_date.year + 1
+            
+            first_day_next_month = date(next_year, next_month, 1)
+            
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT personelId FROM Nobet WHERE tarih = ?", (first_day_next_month,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            return result and result[0] == person_id
+        
+        return False
+    
+    def validate_manual_change(self, person_id, target_date, year, month):
+        """
+        Manuel değişiklik doğrulama
+        Ardışık gün ve ay sınırı çakışmalarını kontrol eder
+        """
+        warnings = []
+        
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT tarih, personelId FROM Nobet 
+            WHERE strftime('%Y-%m', tarih) = ?
+            ORDER BY tarih
+        """, (f"{year:04d}-{month:02d}",))
+        
+        existing_duties = cursor.fetchall()
+        conn.close()
+        
+        prev_day = target_date - timedelta(days=1)
+        next_day = target_date + timedelta(days=1)
+        
+        for duty_date_str, duty_person_id in existing_duties:
+            duty_date = date.fromisoformat(duty_date_str)
+            if duty_person_id == person_id and (duty_date == prev_day or duty_date == next_day):
+                warnings.append(f"UYARI: {duty_date.strftime('%d.%m.%Y')} tarihinde ardışık nöbet!")
+        
+        if self.has_month_boundary_consecutive_conflict(person_id, target_date):
+            warnings.append("UYARI: Ay sonu/başı ardışık nöbet çakışması!")
+        
+        return warnings
+
     def get_person_name(self, person_id):
         conn = self.db.get_connection()
         cursor = conn.cursor()
