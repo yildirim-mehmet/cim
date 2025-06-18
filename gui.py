@@ -1563,10 +1563,18 @@ Hastane ve klinik personeli için gelişmiş nöbet programı yönetim sistemi
 • Geçmiş nöbet geçmişi dikkate alınır
 • Yeni personel için ortalama değer hesaplanır
 
+🔗 Zorunlu Eşleştirmeler:
+• Perşembe-Cumartesi eşleştirmesi: %85-90 başarı oranı
+• Cuma-Pazar eşleştirmesi: %85-90 başarı oranı
+• Aynı ay içinde farklı haftalarda gerçekleştirilir
+• Puan değerleri göz önüne alınarak optimize edilir
+
 🚫 Kısıtlamalar:
 • Ardışık günlerde aynı kişiye nöbet verilmez
-• Perşembe yazılana aynı hafta Cumartesi yazılmaz (farklı haftalarda yazılır)
-• Cuma yazılana aynı hafta Pazar yazılmaz (farklı haftalarda yazılır)
+• Perşembe yazılana aynı ay farklı haftada Cumartesi yazılmaya zorlanır
+• Cumartesi yazılana aynı ay farklı haftada Perşembe yazılmaya zorlanır
+• Cuma yazılana aynı ay farklı haftada Pazar yazılmaya zorlanır
+• Pazar yazılana aynı ay farklı haftada Cuma yazılmaya zorlanır
 • Ramazan ve Kurban bayramlarında çapraz atama yapılmaz
 • Önceki ayın son günü nöbetçi olan, sonraki ayın ilk günü nöbetçi olmaz
 

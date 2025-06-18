@@ -146,6 +146,82 @@ class DutyScheduler:
         
         return False
     
+    def needs_thursday_saturday_pairing(self, person_id, target_date, existing_schedule, year, month):
+        target_weekday = target_date.weekday()
+        
+        if target_weekday not in [3, 5]:  # Thursday=3, Saturday=5
+            return False
+        
+        has_thursday = False
+        has_saturday = False
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month:
+                scheduled_weekday = scheduled_date.weekday()
+                if scheduled_weekday == 3:  # Thursday
+                    has_thursday = True
+                elif scheduled_weekday == 5:  # Saturday
+                    has_saturday = True
+        
+        if target_weekday == 3 and has_saturday:  # Assigning Thursday, has Saturday
+            return self.has_thursday_saturday_conflict(person_id, target_date, existing_schedule)
+        elif target_weekday == 5 and has_thursday:  # Assigning Saturday, has Thursday
+            return self.has_thursday_saturday_conflict(person_id, target_date, existing_schedule)
+        
+        return False
+    
+    def needs_friday_sunday_pairing(self, person_id, target_date, existing_schedule, year, month):
+        target_weekday = target_date.weekday()
+        
+        if target_weekday not in [4, 6]:  # Friday=4, Sunday=6
+            return False
+        
+        has_friday = False
+        has_sunday = False
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month:
+                scheduled_weekday = scheduled_date.weekday()
+                if scheduled_weekday == 4:  # Friday
+                    has_friday = True
+                elif scheduled_weekday == 6:  # Sunday
+                    has_sunday = True
+        
+        if target_weekday == 4 and has_sunday:  # Assigning Friday, has Sunday
+            return self.has_friday_sunday_conflict(person_id, target_date, existing_schedule)
+        elif target_weekday == 6 and has_friday:  # Assigning Sunday, has Friday
+            return self.has_friday_sunday_conflict(person_id, target_date, existing_schedule)
+        
+        return False
+    
+    def calculate_pairing_bonus(self, person_id, target_date, existing_schedule, year, month):
+        target_weekday = target_date.weekday()
+        bonus = 0
+        
+        if target_weekday == 3:  # Thursday
+            has_saturday = any(scheduled_date.weekday() == 5 for scheduled_date, scheduled_person, _ in existing_schedule 
+                             if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
+            if not has_saturday:
+                bonus += 50  # Bonus for potential Thursday-Saturday pairing
+        elif target_weekday == 5:  # Saturday
+            has_thursday = any(scheduled_date.weekday() == 3 for scheduled_date, scheduled_person, _ in existing_schedule 
+                             if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
+            if not has_thursday:
+                bonus += 50  # Bonus for potential Saturday-Thursday pairing
+        
+        if target_weekday == 4:  # Friday
+            has_sunday = any(scheduled_date.weekday() == 6 for scheduled_date, scheduled_person, _ in existing_schedule 
+                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
+            if not has_sunday:
+                bonus += 50  # Bonus for potential Friday-Sunday pairing
+        elif target_weekday == 6:  # Sunday
+            has_friday = any(scheduled_date.weekday() == 4 for scheduled_date, scheduled_person, _ in existing_schedule 
+                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
+            if not has_friday:
+                bonus += 50  # Bonus for potential Sunday-Friday pairing
+        
+        return bonus
+    
     def has_consecutive_days_conflict(self, person_id, target_date, existing_schedule):
         prev_day = target_date - timedelta(days=1)
         next_day = target_date + timedelta(days=1)
@@ -218,16 +294,19 @@ class DutyScheduler:
                     if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
                         continue
                     
-                    if self.has_thursday_saturday_conflict(person_id, current_date, schedule):
+                    if self.needs_thursday_saturday_pairing(person_id, current_date, schedule, year, month):
                         continue
                     
-                    if self.has_friday_sunday_conflict(person_id, current_date, schedule):
+                    if self.needs_friday_sunday_pairing(person_id, current_date, schedule, year, month):
                         continue
                     
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                         continue
                 
                 priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                
+                pairing_bonus = self.calculate_pairing_bonus(person_id, current_date, schedule, year, month)
+                priority_score += pairing_bonus
                 
                 if is_forced_assignment:
                     priority_score += 1000  # Very high priority for forced assignment
