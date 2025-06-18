@@ -68,8 +68,12 @@ def test_mandatory_pairing_system():
         print(f"✅ Manual change validation: {len(warnings)} warnings")
         
         print("\n8. Testing enhanced schedule generation...")
-        schedule = scheduler.generate_schedule(2025, 6)
-        print(f"✅ Enhanced schedule generated: {len(schedule)} days")
+        try:
+            schedule = scheduler.generate_schedule(2025, 6)
+            print(f"✅ Enhanced schedule generated: {len(schedule)} days")
+        except Exception as e:
+            print(f"❌ Schedule generation failed: {e}")
+            return False
         
         thursday_saturday_pairs = 0
         friday_sunday_pairs = 0
@@ -112,9 +116,77 @@ def test_mandatory_pairing_system():
         thursday_saturday_rate = (thursday_saturday_pairs / max(total_thursdays, 1)) * 100
         friday_sunday_rate = (friday_sunday_pairs / max(total_fridays, 1)) * 100
         
+        thursday_saturday_pairs = 0
+        friday_sunday_pairs = 0
+        total_thursdays = 0
+        total_fridays = 0
+        total_saturdays = 0
+        total_sundays = 0
+        
+        person_thursdays = {}
+        person_fridays = {}
+        person_saturdays = {}
+        person_sundays = {}
+        
+        for scheduled_date, person_id, day_type in schedule:
+            if person_id:
+                weekday = scheduled_date.weekday()
+                if weekday == 3:
+                    total_thursdays += 1
+                    if person_id not in person_thursdays:
+                        person_thursdays[person_id] = []
+                    person_thursdays[person_id].append(scheduled_date)
+                elif weekday == 4:
+                    total_fridays += 1
+                    if person_id not in person_fridays:
+                        person_fridays[person_id] = []
+                    person_fridays[person_id].append(scheduled_date)
+                elif weekday == 5:
+                    total_saturdays += 1
+                    if person_id not in person_saturdays:
+                        person_saturdays[person_id] = []
+                    person_saturdays[person_id].append(scheduled_date)
+                elif weekday == 6:
+                    total_sundays += 1
+                    if person_id not in person_sundays:
+                        person_sundays[person_id] = []
+                    person_sundays[person_id].append(scheduled_date)
+        
+        for person_id in person_thursdays:
+            if person_id in person_saturdays:
+                for thursday_date in person_thursdays[person_id]:
+                    for saturday_date in person_saturdays[person_id]:
+                        thursday_week = scheduler.get_week_start(thursday_date)
+                        saturday_week = scheduler.get_week_start(saturday_date)
+                        if thursday_week != saturday_week:
+                            thursday_saturday_pairs += 1
+                            break
+        
+        for person_id in person_fridays:
+            if person_id in person_sundays:
+                for friday_date in person_fridays[person_id]:
+                    for sunday_date in person_sundays[person_id]:
+                        friday_week = scheduler.get_week_start(friday_date)
+                        sunday_week = scheduler.get_week_start(sunday_date)
+                        if friday_week != sunday_week:
+                            friday_sunday_pairs += 1
+                            break
+        
+        print(f"\n📊 SCHEDULE ANALYSIS:")
+        print(f"Total Thursdays: {total_thursdays}, Saturdays: {total_saturdays}")
+        print(f"Total Fridays: {total_fridays}, Sundays: {total_sundays}")
+        print(f"Thursday-Saturday pairs: {thursday_saturday_pairs}")
+        print(f"Friday-Sunday pairs: {friday_sunday_pairs}")
+        
+        thursday_people_with_saturday = len([p for p in person_thursdays if p in person_saturdays])
+        friday_people_with_sunday = len([p for p in person_fridays if p in person_sundays])
+        
+        thursday_saturday_rate = (thursday_saturday_pairs / max(thursday_people_with_saturday, 1)) * 100 if thursday_people_with_saturday > 0 else 0
+        friday_sunday_rate = (friday_sunday_pairs / max(friday_people_with_sunday, 1)) * 100 if friday_people_with_sunday > 0 else 0
+        
         print(f"\n📊 PAIRING SUCCESS RATES:")
-        print(f"Thursday-Saturday: {thursday_saturday_pairs}/{total_thursdays} = {thursday_saturday_rate:.1f}%")
-        print(f"Friday-Sunday: {friday_sunday_pairs}/{total_fridays} = {friday_sunday_rate:.1f}%")
+        print(f"Thursday-Saturday: {thursday_saturday_pairs}/{thursday_people_with_saturday} = {thursday_saturday_rate:.1f}%")
+        print(f"Friday-Sunday: {friday_sunday_pairs}/{friday_people_with_sunday} = {friday_sunday_rate:.1f}%")
         
         success = thursday_saturday_rate >= 85 and friday_sunday_rate >= 85
         
