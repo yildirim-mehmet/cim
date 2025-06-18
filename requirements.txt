@@ -1,0 +1,6 @@
+sqlite3
+pandas
+openpyxl
+tkinter
+datetime
+calendar
