@@ -6,6 +6,11 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 class ExcelExporter:
+    TURKISH_MONTHS = {
+        1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+        7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+    }
+    
     def __init__(self, database):
         self.db = database
     
@@ -17,7 +22,7 @@ class ExcelExporter:
         
         wb = Workbook()
         ws = wb.active
-        ws.title = f"{year} {calendar.month_name[month]}"
+        ws.title = f"{year} {self.TURKISH_MONTHS[month]}"
         
         days_in_month = calendar.monthrange(year, month)[1]
         first_weekday = calendar.monthrange(year, month)[0]
@@ -106,7 +111,7 @@ class ExcelExporter:
         
         wb = Workbook()
         ws = wb.active
-        ws.title = f"{year} {calendar.month_name[month]}"
+        ws.title = f"{year} {self.TURKISH_MONTHS[month]}"
         
         days_in_month = calendar.monthrange(year, month)[1]
         first_weekday = calendar.monthrange(year, month)[0]
