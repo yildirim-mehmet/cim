@@ -7,6 +7,11 @@ from scheduler import DutyScheduler
 from excel_exporter import ExcelExporter
 
 class DutySchedulerGUI:
+    TURKISH_MONTHS = {
+        1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+        7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+    }
+    
     def __init__(self, root):
         self.root = root
         self.root.title("Nöbet Programı Yönetim Sistemi")
@@ -46,7 +51,7 @@ class DutySchedulerGUI:
         ttk.Label(control_frame, text="Ay:").grid(row=0, column=2, padx=(0, 5))
         self.month_var = tk.StringVar(value=str(self.selected_month))
         month_combo = ttk.Combobox(control_frame, textvariable=self.month_var, width=10)
-        month_combo['values'] = [f"{i} - {calendar.month_name[i]}" for i in range(1, 13)]
+        month_combo['values'] = [f"{i} - {self.TURKISH_MONTHS[i]}" for i in range(1, 13)]
         month_combo.grid(row=0, column=3, padx=(0, 20))
         month_combo.bind('<<ComboboxSelected>>', self.on_date_change)
         
@@ -893,7 +898,7 @@ class DutySchedulerGUI:
         ttk.Label(date_frame, text="Ay:").grid(row=0, column=2, padx=(0, 5))
         old_month_var = tk.StringVar(value=str(self.selected_month))
         old_month_combo = ttk.Combobox(date_frame, textvariable=old_month_var, width=15)
-        old_month_combo['values'] = [f"{i} - {calendar.month_name[i]}" for i in range(1, 13)]
+        old_month_combo['values'] = [f"{i} - {self.TURKISH_MONTHS[i]}" for i in range(1, 13)]
         old_month_combo.grid(row=0, column=3, padx=(0, 20))
         
         def refresh_old_duties():
@@ -988,6 +993,10 @@ class DutySchedulerGUI:
                     
                     messagebox.showinfo("Başarılı", f"{deleted_count} nöbet kaydı silindi.")
                     refresh_old_duties()
+                    
+                    if year == self.selected_year and month == self.selected_month:
+                        self.load_existing_schedule()
+                        self.update_stats()
                     
             except Exception as e:
                 messagebox.showerror("Hata", f"Silme işlemi sırasında hata oluştu: {str(e)}")
