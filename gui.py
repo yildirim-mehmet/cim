@@ -19,6 +19,7 @@ class DutySchedulerGUI:
         self.current_schedule = []
         self.selected_year = datetime.now().year
         self.selected_month = datetime.now().month
+        self.day_cells = {}
         
         self.setup_ui()
         self.load_initial_data()
@@ -79,24 +80,9 @@ class DutySchedulerGUI:
         schedule_frame = ttk.LabelFrame(main_frame, text="Nöbet Programı", padding="10")
         schedule_frame.grid(row=1, column=1, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(10, 0))
         schedule_frame.columnconfigure(0, weight=1)
-        schedule_frame.rowconfigure(0, weight=1)
+        schedule_frame.rowconfigure(1, weight=1)
         
-        self.schedule_tree = ttk.Treeview(schedule_frame, columns=('Tarih', 'Personel', 'Gün Türü', 'Puan'), show='headings')
-        self.schedule_tree.heading('Tarih', text='Tarih')
-        self.schedule_tree.heading('Personel', text='Personel')
-        self.schedule_tree.heading('Gün Türü', text='Gün Türü')
-        self.schedule_tree.heading('Puan', text='Puan')
-        
-        self.schedule_tree.column('Tarih', width=100)
-        self.schedule_tree.column('Personel', width=120)
-        self.schedule_tree.column('Gün Türü', width=120)
-        self.schedule_tree.column('Puan', width=80)
-        
-        schedule_scroll = ttk.Scrollbar(schedule_frame, orient=tk.VERTICAL, command=self.schedule_tree.yview)
-        self.schedule_tree.configure(yscrollcommand=schedule_scroll.set)
-        
-        self.schedule_tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        schedule_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        self.setup_calendar_view(schedule_frame)
         
         stats_frame = ttk.LabelFrame(main_frame, text="İstatistikler", padding="10")
         stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -117,6 +103,81 @@ class DutySchedulerGUI:
         
         self.stats_tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         stats_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+    
+    def setup_calendar_view(self, parent_frame):
+        header_frame = ttk.Frame(parent_frame)
+        header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        header_frame.columnconfigure(0, weight=1)
+        header_frame.columnconfigure(1, weight=1)
+        header_frame.columnconfigure(2, weight=1)
+        header_frame.columnconfigure(3, weight=1)
+        header_frame.columnconfigure(4, weight=1)
+        header_frame.columnconfigure(5, weight=1)
+        header_frame.columnconfigure(6, weight=1)
+        
+        weekdays = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+        for i, day_name in enumerate(weekdays):
+            header_label = ttk.Label(header_frame, text=day_name, font=('Arial', 10, 'bold'))
+            header_label.grid(row=0, column=i, padx=1, pady=2, sticky=(tk.W, tk.E))
+        
+        calendar_container = ttk.Frame(parent_frame)
+        calendar_container.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        canvas = tk.Canvas(calendar_container, bg='white')
+        scrollbar = ttk.Scrollbar(calendar_container, orient="vertical", command=canvas.yview)
+        self.calendar_frame = ttk.Frame(canvas)
+        
+        self.calendar_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.calendar_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        calendar_container.columnconfigure(0, weight=1)
+        calendar_container.rowconfigure(0, weight=1)
+        
+        for i in range(7):
+            self.calendar_frame.columnconfigure(i, weight=1)
+    
+    def get_day_color(self, date_obj, day_type):
+        weekday = date_obj.weekday()
+        
+        if 'Tatil' in day_type or 'Resmi Tatil' in day_type:
+            return '#FFE4B5'
+        elif weekday in [5, 6]:
+            return '#E6F3FF'
+        else:
+            return '#F8F8F8'
+    
+    def create_day_cell(self, parent, row, col, day_num, person_name, day_type, date_obj):
+        cell_color = self.get_day_color(date_obj, day_type)
+        
+        cell_frame = tk.Frame(parent, bg=cell_color, relief='solid', bd=1, width=100, height=80)
+        cell_frame.grid(row=row, column=col, padx=1, pady=1, sticky=(tk.W, tk.E, tk.N, tk.S))
+        cell_frame.grid_propagate(False)
+        
+        day_label = tk.Label(cell_frame, text=str(day_num), font=('Arial', 12, 'bold'), 
+                           bg=cell_color, fg='black')
+        day_label.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        
+        if person_name and person_name != "ATANMADI":
+            person_label = tk.Label(cell_frame, text=person_name, font=('Arial', 9), 
+                                  bg=cell_color, fg='darkblue', wraplength=90)
+            person_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=2)
+        
+        if 'Tatil' in day_type or day_type not in ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']:
+            type_label = tk.Label(cell_frame, text=day_type, font=('Arial', 8), 
+                                bg=cell_color, fg='darkred', wraplength=90)
+            type_label.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        
+        cell_frame.columnconfigure(0, weight=1)
+        
+        return cell_frame
     
     def load_initial_data(self):
         self.db.check_and_populate_sample_data()
@@ -149,12 +210,14 @@ class DutySchedulerGUI:
             
             self.load_existing_schedule()
             self.update_stats()
-        except ValueError:
-            pass
+        except Exception as e:
+            print(f"Date change error: {e}")
+            self.populate_calendar()
     
     def load_existing_schedule(self):
-        for item in self.schedule_tree.get_children():
-            self.schedule_tree.delete(item)
+        for cell in self.day_cells.values():
+            cell.destroy()
+        self.day_cells.clear()
         
         conn = self.db.get_connection()
         cursor = conn.cursor()
@@ -170,37 +233,40 @@ class DutySchedulerGUI:
         schedule_data = cursor.fetchall()
         conn.close()
         
+        schedule_dict = {}
         for row in schedule_data:
-            self.schedule_tree.insert('', 'end', values=row)
+            date_str = row[0]
+            schedule_dict[date_str] = {
+                'person': row[1],
+                'day_type': row[2],
+                'value': row[3]
+            }
+        
+        self.populate_calendar(schedule_dict)
     
     def generate_schedule(self):
         try:
             self.current_schedule = self.scheduler.generate_schedule(self.selected_year, self.selected_month)
             
-            for item in self.schedule_tree.get_children():
-                self.schedule_tree.delete(item)
+            for cell in self.day_cells.values():
+                cell.destroy()
+            self.day_cells.clear()
             
-            day_values = self.scheduler.get_day_values()
-            day_value_lookup = {v['name']: v['value'] for v in day_values.values()}
-            
+            schedule_dict = {}
             for scheduled_date, person_id, day_type in self.current_schedule:
+                date_str = scheduled_date.strftime('%Y-%m-%d')
                 if person_id:
                     person_name = self.scheduler.get_person_name(person_id)
-                    day_value = day_value_lookup.get(day_type, 0)
-                    self.schedule_tree.insert('', 'end', values=(
-                        scheduled_date.strftime('%Y-%m-%d'),
-                        person_name,
-                        day_type,
-                        f"{day_value:.1f}"
-                    ))
                 else:
-                    self.schedule_tree.insert('', 'end', values=(
-                        scheduled_date.strftime('%Y-%m-%d'),
-                        "ATANMADI",
-                        day_type,
-                        "0.0"
-                    ))
+                    person_name = "ATANMADI"
+                
+                schedule_dict[date_str] = {
+                    'person': person_name,
+                    'day_type': day_type,
+                    'value': 0
+                }
             
+            self.populate_calendar(schedule_dict)
             messagebox.showinfo("Başarılı", f"{self.selected_year}/{self.selected_month} ayı için nöbet programı hazırlandı!")
             
         except Exception as e:
@@ -223,7 +289,7 @@ class DutySchedulerGUI:
             filename = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-                initialname=f"nobet_programi_{self.selected_year}_{self.selected_month:02d}.xlsx"
+                initialfile=f"nobet_programi_{self.selected_year}_{self.selected_month:02d}.xlsx"
             )
             
             if filename:
@@ -414,6 +480,42 @@ class DutySchedulerGUI:
         personnel_window.grab_set()
         
         name_entry.focus()
+    
+    def populate_calendar(self, schedule_dict=None):
+        if schedule_dict is None:
+            schedule_dict = {}
+        
+        for cell in self.day_cells.values():
+            cell.destroy()
+        self.day_cells.clear()
+        
+        days_in_month = calendar.monthrange(self.selected_year, self.selected_month)[1]
+        first_weekday = calendar.monthrange(self.selected_year, self.selected_month)[0]
+        
+        current_row = 0
+        current_col = first_weekday
+        
+        for day in range(1, days_in_month + 1):
+            date_obj = date(self.selected_year, self.selected_month, day)
+            date_str = date_obj.strftime('%Y-%m-%d')
+            
+            if date_str in schedule_dict:
+                person_name = schedule_dict[date_str]['person']
+                day_type = schedule_dict[date_str]['day_type']
+            else:
+                person_name = ""
+                weekday = date_obj.weekday()
+                weekday_names = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+                day_type = weekday_names[weekday]
+            
+            cell = self.create_day_cell(self.calendar_frame, current_row, current_col, 
+                                      day, person_name, day_type, date_obj)
+            self.day_cells[date_str] = cell
+            
+            current_col += 1
+            if current_col > 6:
+                current_col = 0
+                current_row += 1
 
 def main():
     root = tk.Tk()
