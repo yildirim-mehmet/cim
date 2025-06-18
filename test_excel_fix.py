@@ -34,8 +34,8 @@ def test_calendar_implementation():
         ('populate_calendar', 'Calendar population method'),
         ('get_day_color', 'Color coding method'),
         ('Pazartesi', 'Turkish weekday names'),
-        ('lightblue', 'Weekend color coding'),
-        ('lightyellow', 'Holiday color coding')
+        ('#E6F3FF', 'Weekend color coding'),
+        ('#FFE4B5', 'Holiday color coding')
     ]
     
     passed = 0
