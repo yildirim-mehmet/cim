@@ -52,6 +52,7 @@ class DutySchedulerGUI:
         ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=4, padx=(0, 10))
         ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=5, padx=(0, 10))
         ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
+        ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -118,7 +119,7 @@ class DutySchedulerGUI:
         stats_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
     
     def load_initial_data(self):
-        self.db.populate_sample_data()
+        self.db.check_and_populate_sample_data()
         self.load_personnel()
         self.load_existing_schedule()
         self.update_stats()
@@ -254,6 +255,165 @@ class DutySchedulerGUI:
         
         for row in stats_data:
             self.stats_tree.insert('', 'end', values=(row[0], row[1], f"{row[2]:.1f}"))
+    
+    def open_personnel_window(self):
+        """Personel ekleme penceresini açar"""
+        personnel_window = tk.Toplevel(self.root)
+        personnel_window.title("Personel Yönetimi")
+        personnel_window.geometry("600x500")
+        personnel_window.resizable(True, True)
+        
+        main_frame = ttk.Frame(personnel_window, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        personnel_window.columnconfigure(0, weight=1)
+        personnel_window.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Yeni Personel Ekle", padding="10")
+        form_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(form_frame, text="Ad:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        name_entry = ttk.Entry(form_frame, width=30)
+        name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
+        
+        ttk.Label(form_frame, text="Statü:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        status_var = tk.StringVar()
+        status_combo = ttk.Combobox(form_frame, textvariable=status_var, width=27)
+        status_combo['values'] = ('Doktor', 'Hemşire', 'Uzman', 'Teknisyen', 'Diğer')
+        status_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
+        
+        aktif_var = tk.BooleanVar(value=True)
+        aktif_check = ttk.Checkbutton(form_frame, text="Aktif", variable=aktif_var)
+        aktif_check.grid(row=2, column=1, sticky=tk.W, padx=(10, 0), pady=2)
+        
+        form_frame.columnconfigure(1, weight=1)
+        
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        
+        def add_personnel():
+            name = name_entry.get().strip()
+            status = status_var.get().strip()
+            aktif = 1 if aktif_var.get() else 0
+            
+            if not name or not status:
+                messagebox.showerror("Hata", "Ad ve Statü alanları zorunludur!")
+                return
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("INSERT INTO Personel (ad, statu, Aktif) VALUES (?, ?, ?)", 
+                             (name, status, aktif))
+                conn.commit()
+                conn.close()
+                
+                messagebox.showinfo("Başarılı", f"{name} başarıyla eklendi!")
+                
+                name_entry.delete(0, tk.END)
+                status_var.set('')
+                aktif_var.set(True)
+                
+                refresh_personnel_list()
+                self.load_personnel()  # Ana penceredeki listeyi de güncelle
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Personel eklenirken hata oluştu: {str(e)}")
+        
+        def clear_form():
+            name_entry.delete(0, tk.END)
+            status_var.set('')
+            aktif_var.set(True)
+        
+        ttk.Button(btn_frame, text="Ekle", command=add_personnel).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="Temizle", command=clear_form).grid(row=0, column=1, padx=5)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Mevcut Personeller", padding="10")
+        list_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        
+        main_frame.rowconfigure(1, weight=1)
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        
+        columns = ('ID', 'Ad', 'Statü', 'Aktif')
+        personnel_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
+        
+        personnel_tree.heading('ID', text='ID')
+        personnel_tree.heading('Ad', text='Ad')
+        personnel_tree.heading('Statü', text='Statü')
+        personnel_tree.heading('Aktif', text='Aktif')
+        
+        personnel_tree.column('ID', width=50)
+        personnel_tree.column('Ad', width=150)
+        personnel_tree.column('Statü', width=100)
+        personnel_tree.column('Aktif', width=80)
+        
+        personnel_tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=personnel_tree.yview)
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        personnel_tree.configure(yscrollcommand=scrollbar.set)
+        
+        def refresh_personnel_list():
+            for item in personnel_tree.get_children():
+                personnel_tree.delete(item)
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, ad, statu, Aktif FROM Personel ORDER BY id")
+                personnel_data = cursor.fetchall()
+                conn.close()
+                
+                for person in personnel_data:
+                    aktif_text = "Evet" if person[3] else "Hayır"
+                    personnel_tree.insert('', tk.END, values=(person[0], person[1], person[2], aktif_text))
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Personel listesi yüklenirken hata: {str(e)}")
+        
+        def toggle_active():
+            selected = personnel_tree.selection()
+            if not selected:
+                messagebox.showwarning("Uyarı", "Lütfen bir personel seçin!")
+                return
+            
+            item = personnel_tree.item(selected[0])
+            person_id = item['values'][0]
+            current_status = item['values'][3] == "Evet"
+            new_status = not current_status
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("UPDATE Personel SET Aktif = ? WHERE id = ?", 
+                             (1 if new_status else 0, person_id))
+                conn.commit()
+                conn.close()
+                
+                refresh_personnel_list()
+                self.load_personnel()  # Ana penceredeki listeyi de güncelle
+                
+                status_text = "aktif" if new_status else "pasif"
+                messagebox.showinfo("Başarılı", f"Personel durumu {status_text} olarak güncellendi!")
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Personel durumu güncellenirken hata: {str(e)}")
+        
+        bottom_btn_frame = ttk.Frame(list_frame)
+        bottom_btn_frame.grid(row=1, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(bottom_btn_frame, text="Yenile", command=refresh_personnel_list).grid(row=0, column=0, padx=5)
+        ttk.Button(bottom_btn_frame, text="Aktif/Pasif Değiştir", command=toggle_active).grid(row=0, column=1, padx=5)
+        
+        refresh_personnel_list()
+        
+        personnel_window.transient(self.root)
+        personnel_window.grab_set()
+        
+        name_entry.focus()
 
 def main():
     root = tk.Tk()

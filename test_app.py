@@ -12,7 +12,7 @@ def test_application():
     
     print('\n1. Testing database creation...')
     db = Database()
-    db.populate_sample_data()
+    db.check_and_populate_sample_data()
     print('✓ Database created and populated successfully')
     
     print('\n2. Testing scheduler...')

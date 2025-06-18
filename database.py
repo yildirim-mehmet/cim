@@ -5,12 +5,13 @@ from datetime import datetime
 class Database:
     def __init__(self, db_path="nobet_programi.db"):
         self.db_path = db_path
-        self.init_database()
+        if not os.path.exists(self.db_path):
+            raise FileNotFoundError(f"Database file {self.db_path} not found. Please ensure the database file exists.")
     
     def get_connection(self):
         return sqlite3.connect(self.db_path)
     
-    def init_database(self):
+    def init_database_schema(self):
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -71,9 +72,16 @@ class Database:
         conn.commit()
         conn.close()
     
-    def populate_sample_data(self):
+    def check_and_populate_sample_data(self):
         conn = self.get_connection()
         cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM Personel")
+        personel_count = cursor.fetchone()[0]
+        
+        if personel_count > 0:
+            conn.close()
+            return
         
         personel_data = [
             (1, 'Ayşe', 'Doktor', 1),
@@ -87,7 +95,6 @@ class Database:
             (9, 'Elif', 'Teknisyen', 1)
         ]
         
-        cursor.execute("DELETE FROM Personel")
         cursor.executemany("INSERT INTO Personel (id, ad, statu, Aktif) VALUES (?, ?, ?, ?)", personel_data)
         
         gun_deger_data = [
@@ -107,7 +114,6 @@ class Database:
             (14, 'Dini Tatil 6', 2.4)
         ]
         
-        cursor.execute("DELETE FROM GunDeger")
         cursor.executemany("INSERT INTO GunDeger (id, ad, deger) VALUES (?, ?, ?)", gun_deger_data)
         
         tatil_data = [
@@ -116,11 +122,10 @@ class Database:
             (3, 11, 'Ramazan 3', '2025-06-09'),
             (4, 12, 'Ramazan 4', '2025-06-10'),
             (5, 13, 'Ramazan 5', '2025-06-11'),
-            (6, 14, 'Ramazan 6', '2025-06-12'),
+            (6, 14, 'Ramazan 6', '2025-12'),
             (7, 8, '19 Mayıs', '2025-05-19')
         ]
         
-        cursor.execute("DELETE FROM Tatil")
         cursor.executemany("INSERT INTO Tatil (id, gunDegerId, ad, tarih) VALUES (?, ?, ?, ?)", tatil_data)
         
         mazeret_data = [
@@ -130,7 +135,6 @@ class Database:
             (4, 7, '2025-06-23', 1)
         ]
         
-        cursor.execute("DELETE FROM Mazeret")
         cursor.executemany("INSERT INTO Mazeret (id, personelId, tarih, tut) VALUES (?, ?, ?, ?)", mazeret_data)
         
         conn.commit()
