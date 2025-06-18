@@ -178,7 +178,13 @@ class DutySchedulerGUI:
         
         cell_frame.columnconfigure(0, weight=1)
         
-        cell_frame.bind("<Button-3>", lambda e: self.show_duty_change_menu(e, date_obj, person_name))
+        right_click_handler = lambda e: self.show_duty_change_menu(e, date_obj, person_name)
+        cell_frame.bind("<Button-3>", right_click_handler)
+        day_label.bind("<Button-3>", right_click_handler)
+        if person_name and person_name != "ATANMADI":
+            person_label.bind("<Button-3>", right_click_handler)
+        if 'Tatil' in day_type or day_type not in ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']:
+            type_label.bind("<Button-3>", right_click_handler)
         
         return cell_frame
     
@@ -247,8 +253,6 @@ class DutySchedulerGUI:
                 nobet_record = cursor.fetchone()
                 
                 if nobet_record:
-                    old_personel_id = nobet_record[1]
-                    
                     cursor.execute("""
                         UPDATE Nobet 
                         SET personelId = ?, degisiklik = 1, esTarih = ?, yenTarih = ?
@@ -264,7 +268,20 @@ class DutySchedulerGUI:
                     change_window.destroy()
                 else:
                     conn.close()
-                    messagebox.showerror("Hata", "Bu tarih için nöbet kaydı bulunamadı!")
+                    
+                    if hasattr(self, 'current_schedule') and self.current_schedule:
+                        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        for i, (scheduled_date, person_id, day_type) in enumerate(self.current_schedule):
+                            if scheduled_date == target_date:
+                                self.current_schedule[i] = (scheduled_date, new_personel_id, day_type)
+                                break
+                        
+                        self.generate_schedule_display()
+                        
+                        messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{current_person} → {new_personel_name}\n(Değişiklikleri kaydetmeyi unutmayın!)")
+                        change_window.destroy()
+                    else:
+                        messagebox.showerror("Hata", "Önce nöbet programını hazırlayın!")
                 
             except Exception as e:
                 messagebox.showerror("Hata", f"Nöbet değiştirme sırasında hata: {str(e)}")
@@ -375,6 +392,31 @@ class DutySchedulerGUI:
             
         except Exception as e:
             messagebox.showerror("Hata", f"Nöbet programı hazırlanırken hata oluştu: {str(e)}")
+    
+    def generate_schedule_display(self):
+        """Refresh calendar display from current_schedule without regenerating"""
+        if not self.current_schedule:
+            return
+            
+        for cell in self.day_cells.values():
+            cell.destroy()
+        self.day_cells.clear()
+        
+        schedule_dict = {}
+        for scheduled_date, person_id, day_type in self.current_schedule:
+            date_str = scheduled_date.strftime('%Y-%m-%d')
+            if person_id:
+                person_name = self.scheduler.get_person_name(person_id)
+            else:
+                person_name = "ATANMADI"
+            
+            schedule_dict[date_str] = {
+                'person': person_name,
+                'day_type': day_type,
+                'value': 0
+            }
+        
+        self.populate_calendar(schedule_dict)
     
     def save_schedule(self):
         if not self.current_schedule:

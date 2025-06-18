@@ -184,23 +184,34 @@ class DutyScheduler:
             
             eligible_personnel = []
             for person_id in personnel_ids:
-                if day == 1 and person_id == last_month_duty_person:
-                    continue
+                is_forced_assignment = (person_id in exemption_dict and 
+                                      current_date in exemption_dict[person_id] and 
+                                      exemption_dict[person_id][current_date] == 1)
                 
-                if person_id in exemption_dict and current_date in exemption_dict[person_id]:
-                    if not exemption_dict[person_id][current_date]:
+                if day == 1 and person_id == last_month_duty_person:
+                    if not is_forced_assignment:  # Allow forced assignment even on first day
                         continue
                 
-                if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
-                    continue
+                if person_id in exemption_dict and current_date in exemption_dict[person_id]:
+                    tut_value = exemption_dict[person_id][current_date]
+                    if tut_value == 0:  # tut=0 means exclude from duty
+                        continue
                 
-                if self.has_thursday_saturday_conflict(person_id, current_date, schedule):
-                    continue
-                
-                if self.has_consecutive_days_conflict(person_id, current_date, schedule):
-                    continue
+                if not is_forced_assignment:
+                    if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
+                        continue
+                    
+                    if self.has_thursday_saturday_conflict(person_id, current_date, schedule):
+                        continue
+                    
+                    if self.has_consecutive_days_conflict(person_id, current_date, schedule):
+                        continue
                 
                 priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                
+                if is_forced_assignment:
+                    priority_score += 1000  # Very high priority for forced assignment
+                
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
