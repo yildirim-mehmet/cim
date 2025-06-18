@@ -63,6 +63,7 @@ class DutySchedulerGUI:
         ttk.Button(control_frame, text="Eski Nöbetler", command=self.open_old_duties_window).grid(row=1, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         ttk.Button(control_frame, text="Gün Değerleri", command=self.open_gun_deger_window).grid(row=2, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         ttk.Button(control_frame, text="Tatil Yönetimi", command=self.open_tatil_window).grid(row=2, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
+        ttk.Button(control_frame, text="Bilgi", command=self.open_info_window).grid(row=2, column=4, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -1486,6 +1487,153 @@ class DutySchedulerGUI:
         ttk.Button(frame, text="📅", width=3, command=open_calendar).pack(side=tk.LEFT)
         
         return frame
+
+    def open_info_window(self):
+        info_window = tk.Toplevel(self.root)
+        info_window.title("Nöbet Programı - Bilgi")
+        info_window.geometry("900x700")
+        info_window.resizable(True, True)
+        info_window.grab_set()
+        
+        info_window.transient(self.root)
+        info_window.update_idletasks()
+        x = (info_window.winfo_screenwidth() // 2) - (450)
+        y = (info_window.winfo_screenheight() // 2) - (350)
+        info_window.geometry(f"900x700+{x}+{y}")
+        
+        main_frame = tk.Frame(info_window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        title_label = tk.Label(main_frame, text="Nöbet Programı Yönetim Sistemi", 
+                              font=("Arial", 16, "bold"), fg="#2c3e50")
+        title_label.pack(pady=(0, 20))
+        
+        text_frame = tk.Frame(main_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text_widget = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, 
+                             font=("Arial", 11), bg="#f8f9fa", relief=tk.FLAT, padx=15, pady=15)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        
+        info_content = """
+NÖBET PROGRAMI YÖNETİM SİSTEMİ
+Hastane ve klinik personeli için gelişmiş nöbet programı yönetim sistemi
+
+🎯 TEMEL ÖZELLİKLER:
+
+📋 Nöbet Programı Oluşturma:
+• "Nöbet Hazırla" butonu ile otomatik nöbet dağıtımı
+• Adil dağıtım algoritması ile eşit nöbet yükü
+• Önizleme ve manuel düzenleme imkanı
+• "Kaydet" butonu ile programı veritabanına kaydetme
+
+👥 Personel Yönetimi:
+• Personel ekleme, düzenleme ve silme
+• Aktif/pasif durum yönetimi
+• Statü bilgileri (Doktor, Hemşire, Uzman, Teknisyen)
+
+😷 Mazeret Yönetimi:
+• Personel mazeret kayıtları
+• Zorunlu atama (tut=1) ve hariç tutma (tut=0) seçenekleri
+• Takvim ile tarih seçimi
+
+📊 Eski Nöbetler:
+• Geçmiş nöbet kayıtlarını görüntüleme
+• Yıl/ay bazında filtreleme
+• Aylık nöbet kayıtlarını toplu silme
+
+⚙️ Sistem Ayarları:
+• Gün değerleri ve puanlama sistemi
+• Tatil günleri yönetimi
+• Dini ve resmi tatil tanımlamaları
+
+📈 Excel Raporlama:
+• Aylık nöbet programlarını Excel'e aktarma
+• 7 sütunlu takvim formatında görüntüleme
+• Personel özet raporları
+
+🔧 NÖBET DAĞITIM KURALLARI:
+
+⚖️ Adil Dağıtım:
+• Toplam nöbet sayısı ve puan değerleri eşitlenir
+• Geçmiş nöbet geçmişi dikkate alınır
+• Yeni personel için ortalama değer hesaplanır
+
+🚫 Kısıtlamalar:
+• Ardışık günlerde aynı kişiye nöbet verilmez
+• Perşembe yazılana aynı hafta Cumartesi yazılmaz (farklı haftalarda yazılır)
+• Cuma yazılana aynı hafta Pazar yazılmaz (farklı haftalarda yazılır)
+• Ramazan ve Kurban bayramlarında çapraz atama yapılmaz
+• Önceki ayın son günü nöbetçi olan, sonraki ayın ilk günü nöbetçi olmaz
+
+🎯 Öncelik Sistemi:
+• Mazeret tut=1 tüm kısıtlamaları geçersiz kılar
+• Mazeret tut=0 kesinlikle hariç tutar
+• Aktif olmayan personele nöbet verilmez
+
+📅 GÜN DEĞERLERİ:
+
+Hafta İçi Günler:
+• Perşembe: 0.9 (En düşük)
+• Salı/Çarşamba: 1.1
+• Pazartesi: 1.2
+• Cuma: 1.4 (Hafta içi en yüksek)
+
+Hafta Sonu:
+• Pazar: 1.6
+• Cumartesi: 2.0 (Referans)
+
+Özel Günler:
+• Resmi Tatil: 2.2
+• Dini Tatil 1,6: 2.4
+• Dini Tatil 2,3,5: 2.9
+• Dini Tatil 4: 3.0 (En yüksek)
+
+🖥️ KULLANIM KILAVUZU:
+
+1️⃣ Başlangıç:
+• Yıl ve ay seçin
+• "Nöbet Hazırla" butonuna tıklayın
+
+2️⃣ Düzenleme:
+• Takvim hücrelerine sağ tıklayarak nöbet değiştirin
+• Değişiklikleri önizleyin
+
+3️⃣ Kaydetme:
+• "Kaydet" butonu ile programı kalıcı hale getirin
+• "Excel'e Aktar" ile rapor alın
+
+4️⃣ Yönetim:
+• Personel, mazeret ve sistem ayarlarını güncelleyin
+• Eski nöbetleri görüntüleyin ve yönetin
+
+💡 İPUÇLARI:
+• Mazeret girişlerini nöbet hazırlamadan önce yapın
+• Tatil günlerini önceden tanımlayın
+• Personel durumlarını güncel tutun
+• Düzenli olarak Excel raporları alın
+
+🔄 GÜNCELLEME NOTLARI:
+• Ana ekran otomatik yenilenir
+• Türkçe ay isimleri kullanılır
+• Gelişmiş takvim seçici
+• Sağ tık menüleri ile hızlı düzenleme
+
+Bu sistem, hastane ve klinik personelinin nöbet programlarını adil, verimli ve kolay bir şekilde yönetmek için tasarlanmıştır. Tüm işlemler kullanıcı dostu arayüz ile gerçekleştirilir.
+
+Mu.Mrk.Ks.
+"""
+        
+        text_widget.insert(tk.END, info_content)
+        text_widget.config(state=tk.DISABLED)
+        
+        close_btn = tk.Button(main_frame, text="Kapat", command=info_window.destroy, 
+                             bg="#dc3545", fg="white", font=("Arial", 12, "bold"))
+        close_btn.pack(pady=(20, 0))
 
 def main():
     root = tk.Tk()

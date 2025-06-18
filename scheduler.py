@@ -129,6 +129,23 @@ class DutyScheduler:
         
         return False
     
+    def has_friday_sunday_conflict(self, person_id, target_date, existing_schedule):
+        target_weekday = target_date.weekday()
+        
+        if target_weekday not in [4, 6]:  # Friday=4, Sunday=6
+            return False
+        
+        target_week_start = target_date - timedelta(days=target_weekday)
+        target_week_end = target_week_start + timedelta(days=6)
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id and target_week_start <= scheduled_date <= target_week_end:
+                scheduled_weekday = scheduled_date.weekday()
+                if (target_weekday == 4 and scheduled_weekday == 6) or (target_weekday == 6 and scheduled_weekday == 4):
+                    return True
+        
+        return False
+    
     def has_consecutive_days_conflict(self, person_id, target_date, existing_schedule):
         prev_day = target_date - timedelta(days=1)
         next_day = target_date + timedelta(days=1)
@@ -202,6 +219,9 @@ class DutyScheduler:
                         continue
                     
                     if self.has_thursday_saturday_conflict(person_id, current_date, schedule):
+                        continue
+                    
+                    if self.has_friday_sunday_conflict(person_id, current_date, schedule):
                         continue
                     
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
