@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import calendar
 from database import Database
 from scheduler import DutyScheduler
@@ -52,6 +52,9 @@ class DutySchedulerGUI:
         ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=4, padx=(0, 10))
         ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=5, padx=(0, 10))
         ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
+        ttk.Button(control_frame, text="Personel Yönet", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
+        ttk.Button(control_frame, text="Mazeret Yönet", command=self.open_mazeret_window).grid(row=0, column=8, padx=(0, 10))
+        ttk.Button(control_frame, text="Bilgi", command=self.open_info_window).grid(row=0, column=9, padx=(0, 10))
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -262,7 +265,6 @@ class DutySchedulerGUI:
             self.stats_tree.insert('', 'end', values=(row[0], row[1], f"{row[2]:.1f}"))
     
     def show_schedule_context_menu(self, event):
-        """Sağ tık menüsünü göster"""
         item = self.schedule_tree.selection()[0] if self.schedule_tree.selection() else None
         if item:
             self.schedule_context_menu.post(event.x_root, event.y_root)
@@ -317,12 +319,16 @@ class DutySchedulerGUI:
             
             person_id = personnel[selection[0]][0]
             
-            warnings = self.scheduler.validate_manual_change(person_id, target_date, self.selected_year, self.selected_month)
-            
-            if warnings:
-                warning_text = "\n".join(warnings)
-                if not messagebox.askyesno("Uyarı", f"{warning_text}\n\nDevam etmek istiyor musunuz?"):
-                    return
+            try:
+                warnings = self.scheduler.validate_manual_change(person_id, target_date, self.selected_year, self.selected_month)
+                
+                if warnings:
+                    warning_text = "\n".join(warnings)
+                    if not messagebox.askyesno("Çakışma Uyarısı", f"{warning_text}\n\nYine de devam etmek istiyor musunuz?"):
+                        return
+            except Exception as e:
+                messagebox.showwarning("Uyarı", f"Doğrulama hatası: {e}")
+                return
             
             self.apply_manual_duty_change(person_id, target_date)
             change_window.destroy()
@@ -349,7 +355,16 @@ class DutySchedulerGUI:
                 else:
                     day_value_id = self.scheduler.get_weekday_id(weekday)
                 
-                day_info = day_values[day_value_id]
+                if day_value_id in day_values:
+                    day_info = day_values[day_value_id]
+                else:
+                    weekday_names = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+                    weekday_values = [1.2, 1.1, 1.1, 0.9, 1.4, 2.0, 1.6]
+                    if 0 <= weekday < 7:
+                        day_info = {'name': weekday_names[weekday], 'value': weekday_values[weekday]}
+                    else:
+                        day_info = {'name': 'Bilinmeyen', 'value': 1.0}
+                
                 person_name = self.scheduler.get_person_name(person_id)
                 
                 cursor.execute("""
@@ -391,6 +406,69 @@ Hastane ve klinik personeli için gelişmiş nöbet programı yönetim sistemi
 
 🔗 ZORUNLU EŞLEŞTİRME SİSTEMİ (%85-90 Başarı Oranı):
 • Perşembe-Cumartesi Zorunlu Eşleştirme:
+  - Perşembe nöbeti olan personele aynı ay farklı haftada Cumartesi ZORUNLU
+  - Cumartesi nöbeti olan personele aynı ay farklı haftada Perşembe ZORUNLU
+• Cuma-Pazar Zorunlu Eşleştirme:
+  - Cuma nöbeti olan personele aynı ay farklı haftada Pazar ZORUNLU
+  - Pazar nöbeti olan personele aynı ay farklı haftada Cuma ZORUNLU
+• 200 puanlık yüksek öncelik bonusu ile zorunlu eşleştirme sağlanır
+• Hafta sınırları: Pazartesi başlangıçlı hafta hesaplaması
+
+⚖️ DAĞITIM DENGELEME SİSTEMİ:
+• Aynı kişiye aynı ay içinde aynı gün türünde (Perşembe, Cumartesi vb.) tekrar nöbet verilmez
+• Aylık gün türü takibi ile adil dağıtım sağlanır
+• -50 puanlık dağıtım dengeleme maliyeti uygulanır
+
+🎡 TATİL DÖNGÜSÜ YÖNETİMİ:
+• 10 kişilik döngüsel tatil nöbet sistemi
+• Cumartesi, Pazar ve tatil günleri için özel döngü
+• Personel ID'sine göre otomatik sıralama
+• +100 puanlık döngü bonusu ile adil dağıtım
+
+🚨 GELİŞMİŞ ÇAKIŞMA KONTROLÜ:
+• Ay sonu-ay başı ardışık nöbet önleme (önceki/sonraki ay kontrolü)
+• Manuel değişikliklerde otomatik uyarı sistemi
+• Sağ tık menüsü ile manuel nöbet değiştirme
+• Çakışma durumunda kullanıcı onayı isteme
+• Ardışık gün çakışması: Önceki/sonraki gün aynı kişi kontrolü
+
+📊 ÖNCELİK PUANLAMA SİSTEMİ:
+Temel Puan = (Ortalama Nöbet Sayısı - Kişi Nöbet Sayısı) × 2 + (Ortalama Puan - Kişi Puan)
++ Zorunlu Eşleştirme Bonusu: +200 puan
++ Tatil Döngüsü Bonusu: +100 puan
+- Dağıtım Dengeleme Maliyeti: -50 puan
+
+🔧 KURAL HİYERARŞİSİ:
+1. Mazeret tut=1 (Tüm kuralları geçersiz kılar)
+2. Temel kısıtlamalar (Ardışık gün, Ramazan-Kurban çakışması)
+3. Zorunlu eşleştirmeler (En yüksek öncelik)
+4. Dağıtım dengeleme
+5. Tatil döngüsü
+6. Temel adalet puanı
+
+📝 ÇOKLU GÜN MAZERET GİRİŞİ:
+• "Ek Gün Sayısı" alanı ile ardışık günlere mazeret ekleme
+• Örnek: Tarih 15.06.2025, Ek Gün Sayısı 3 → 15, 16, 17, 18 Haziran
+• Mevcut tarihler otomatik atlanır
+
+🖱️ MANUEL DÜZENLEME:
+• Nöbet programında sağ tık ile "Nöbeti Değiştir" menüsü
+• Çakışma kontrolü ve uyarı sistemi
+• Onay sonrası değişiklik uygulama
+
+🏥 TATİL ÇAKIŞMA KURALLARI:
+• Ramazan-Kurban çapraz atama: Aynı yıl kapsamında
+• Genel tatil çakışma: Geçmiş tatil nöbeti olan personele yeni tatil verilemez
+• Mazeret tut=1 ile tüm tatil kuralları geçersiz kılınabilir
+
+📈 BAŞARI ORANLARI:
+• Zorunlu Eşleştirme: %85-90
+• Dağıtım Dengeleme: %95+
+• Tatil Döngüsü: %90+
+• Genel Kısıtlama Uyumu: %98+
+
+🔗 ZORUNLU EŞLEŞTİRME SİSTEMİ (%85-90 Başarı Oranı):
+• Perşembe-Cumartesi Zorunlu Eşleştirme:
   - Perşembe nöbeti olan personele aynı ay farklı haftada Cumartesi zorunlu
   - Cumartesi nöbeti olan personele aynı ay farklı haftada Perşembe zorunlu
 • Cuma-Pazar Zorunlu Eşleştirme:
@@ -429,27 +507,6 @@ Temel Puan = (Ortalama Nöbet Sayısı - Kişi Nöbet Sayısı) × 2 + (Ortalama
 5. Tatil döngüsü
 6. Temel adalet puanı
 
-📝 ÇOKLU GÜN MAZERET GİRİŞİ:
-• "Ek Gün Sayısı" alanı ile ardışık günlere mazeret ekleme
-• Örnek: Tarih 15.06.2025, Ek Gün Sayısı 3 → 15, 16, 17, 18 Haziran
-• Mevcut tarihler otomatik atlanır
-
-🖱️ MANUEL DÜZENLEME:
-• Nöbet programında sağ tık ile "Nöbeti Değiştir" menüsü
-• Çakışma kontrolü ve uyarı sistemi
-• Onay sonrası değişiklik uygulama
-
-🏥 TATİL ÇAKIŞMA KURALLARI:
-• Ramazan-Kurban çapraz atama: Aynı yıl kapsamında
-• Genel tatil çakışma: Geçmiş tatil nöbeti olan personele yeni tatil verilemez
-• Mazeret tut=1 ile tüm tatil kuralları geçersiz kılınabilir
-
-📈 BAŞARI ORANLARI:
-• Zorunlu Eşleştirme: %85-90
-• Dağıtım Dengeleme: %95+
-• Tatil Döngüsü: %90+
-• Genel Kısıtlama Uyumu: %98+
-
 Bu gelişmiş sistem, hastane personelinin nöbet programlarını maksimum adalet ve verimlilik ile yönetir.
 
 Mu.Mrk.Ks.
@@ -461,6 +518,208 @@ Mu.Mrk.Ks.
         close_btn = tk.Button(main_frame, text="Kapat", command=info_window.destroy, 
                              bg="#dc3545", fg="white", font=("Arial", 12, "bold"))
         close_btn.pack(pady=(20, 0))
+    
+    def open_personnel_window(self):
+        """Personel yönetim penceresi"""
+        personnel_window = tk.Toplevel(self.root)
+        personnel_window.title("Personel Yönetimi")
+        personnel_window.geometry("600x500")
+        
+        main_frame = ttk.Frame(personnel_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Mevcut Personel", padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        personnel_tree = ttk.Treeview(list_frame, columns=('ID', 'Ad', 'Statü', 'Aktif'), show='headings')
+        personnel_tree.heading('ID', text='ID')
+        personnel_tree.heading('Ad', text='Ad')
+        personnel_tree.heading('Statü', text='Statü')
+        personnel_tree.heading('Aktif', text='Aktif')
+        
+        personnel_tree.column('ID', width=50)
+        personnel_tree.column('Ad', width=150)
+        personnel_tree.column('Statü', width=100)
+        personnel_tree.column('Aktif', width=80)
+        
+        personnel_tree.pack(fill=tk.BOTH, expand=True)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Yeni Personel Ekle", padding="10")
+        form_frame.pack(fill=tk.X)
+        
+        ttk.Label(form_frame, text="Ad:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ad_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=ad_var, width=20).grid(row=0, column=1, padx=(5, 20), pady=2)
+        
+        ttk.Label(form_frame, text="Statü:").grid(row=0, column=2, sticky=tk.W, pady=2)
+        statu_var = tk.StringVar()
+        statu_combo = ttk.Combobox(form_frame, textvariable=statu_var, width=15)
+        statu_combo['values'] = ['Doktor', 'Hemşire', 'Uzman', 'Teknisyen']
+        statu_combo.grid(row=0, column=3, padx=(5, 20), pady=2)
+        
+        aktif_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(form_frame, text="Aktif", variable=aktif_var).grid(row=0, column=4, pady=2)
+        
+        def add_personnel():
+            if not ad_var.get() or not statu_var.get():
+                messagebox.showwarning("Uyarı", "Lütfen tüm alanları doldurun!")
+                return
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO Personel (ad, statu, Aktif) VALUES (?, ?, ?)",
+                             (ad_var.get(), statu_var.get(), aktif_var.get()))
+                conn.commit()
+                conn.close()
+                
+                ad_var.set("")
+                statu_var.set("")
+                aktif_var.set(True)
+                load_personnel_list()
+                self.load_personnel()
+                messagebox.showinfo("Başarılı", "Personel eklendi!")
+            except Exception as e:
+                messagebox.showerror("Hata", f"Personel eklenirken hata oluştu: {str(e)}")
+        
+        def load_personnel_list():
+            for item in personnel_tree.get_children():
+                personnel_tree.delete(item)
+            
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, ad, statu, Aktif FROM Personel ORDER BY ad")
+            personnel = cursor.fetchall()
+            conn.close()
+            
+            for person in personnel:
+                aktif_text = "Evet" if person[3] else "Hayır"
+                personnel_tree.insert('', 'end', values=(person[0], person[1], person[2], aktif_text))
+        
+        ttk.Button(form_frame, text="Ekle", command=add_personnel).grid(row=0, column=5, padx=(10, 0), pady=2)
+        
+        load_personnel_list()
+    
+    def open_mazeret_window(self):
+        """Mazeret yönetim penceresi"""
+        mazeret_window = tk.Toplevel(self.root)
+        mazeret_window.title("Mazeret Yönetimi")
+        mazeret_window.geometry("700x600")
+        
+        main_frame = ttk.Frame(mazeret_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Mevcut Mazeretler", padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        mazeret_tree = ttk.Treeview(list_frame, columns=('Personel', 'Tarih', 'Tut'), show='headings')
+        mazeret_tree.heading('Personel', text='Personel')
+        mazeret_tree.heading('Tarih', text='Tarih')
+        mazeret_tree.heading('Tut', text='Zorunlu')
+        
+        mazeret_tree.column('Personel', width=200)
+        mazeret_tree.column('Tarih', width=150)
+        mazeret_tree.column('Tut', width=100)
+        
+        mazeret_tree.pack(fill=tk.BOTH, expand=True)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Yeni Mazeret Ekle", padding="10")
+        form_frame.pack(fill=tk.X)
+        
+        ttk.Label(form_frame, text="Personel:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        personel_var = tk.StringVar()
+        personel_combo = ttk.Combobox(form_frame, textvariable=personel_var, width=20)
+        personel_combo.grid(row=0, column=1, padx=(5, 20), pady=2)
+        
+        ttk.Label(form_frame, text="Tarih:").grid(row=0, column=2, sticky=tk.W, pady=2)
+        tarih_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=tarih_var, width=15).grid(row=0, column=3, padx=(5, 20), pady=2)
+        
+        ttk.Label(form_frame, text="Ek Gün Sayısı:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ek_gun_var = tk.StringVar(value="0")
+        ttk.Entry(form_frame, textvariable=ek_gun_var, width=10).grid(row=1, column=1, padx=(5, 20), pady=2)
+        
+        tut_var = tk.BooleanVar()
+        ttk.Checkbutton(form_frame, text="Zorunlu Atama (tut=1)", variable=tut_var).grid(row=1, column=2, columnspan=2, sticky=tk.W, pady=2)
+        
+        def load_personnel_combo():
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, ad FROM Personel WHERE Aktif = 1 OR Aktif = 'true' ORDER BY ad")
+            personnel = cursor.fetchall()
+            conn.close()
+            
+            personel_combo['values'] = [f"{p[0]} - {p[1]}" for p in personnel]
+        
+        def add_mazeret():
+            if not personel_var.get() or not tarih_var.get():
+                messagebox.showwarning("Uyarı", "Lütfen personel ve tarih seçin!")
+                return
+            
+            try:
+                person_id = int(personel_var.get().split(' - ')[0])
+                tarih_obj = datetime.strptime(tarih_var.get(), '%Y-%m-%d').date()
+                ek_gun_sayisi = int(ek_gun_var.get()) if ek_gun_var.get().isdigit() else 0
+                tut = tut_var.get()
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                eklenen_tarihler = []
+                for i in range(ek_gun_sayisi + 1):
+                    hedef_tarih = tarih_obj + timedelta(days=i)
+                    hedef_tarih_db = hedef_tarih.strftime('%Y-%m-%d')
+                    
+                    cursor.execute("SELECT COUNT(*) FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                                 (person_id, hedef_tarih_db))
+                    if cursor.fetchone()[0] > 0:
+                        continue
+                    
+                    cursor.execute("INSERT INTO Mazeret (personelId, tarih, tut) VALUES (?, ?, ?)", 
+                                 (person_id, hedef_tarih_db, tut))
+                    eklenen_tarihler.append(hedef_tarih.strftime('%d.%m.%Y'))
+                
+                conn.commit()
+                conn.close()
+                
+                personel_var.set("")
+                tarih_var.set("")
+                ek_gun_var.set("0")
+                tut_var.set(False)
+                load_mazeret_list()
+                
+                if eklenen_tarihler:
+                    messagebox.showinfo("Başarılı", f"Mazeret eklendi: {', '.join(eklenen_tarihler)}")
+                else:
+                    messagebox.showwarning("Uyarı", "Hiçbir tarih eklenemedi (zaten mevcut)")
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Mazeret eklenirken hata oluştu: {str(e)}")
+        
+        def load_mazeret_list():
+            for item in mazeret_tree.get_children():
+                mazeret_tree.delete(item)
+            
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT p.ad, m.tarih, m.tut
+                FROM Mazeret m
+                JOIN Personel p ON m.personelId = p.id
+                ORDER BY m.tarih DESC
+            """)
+            mazeretler = cursor.fetchall()
+            conn.close()
+            
+            for mazeret in mazeretler:
+                tut_text = "Evet" if mazeret[2] else "Hayır"
+                mazeret_tree.insert('', 'end', values=(mazeret[0], mazeret[1], tut_text))
+        
+        ttk.Button(form_frame, text="Ekle", command=add_mazeret).grid(row=1, column=3, padx=(10, 0), pady=2)
+        ttk.Button(form_frame, text="Temizle", command=load_mazeret_list).grid(row=1, column=4, padx=(10, 0), pady=2)
+        
+        load_personnel_combo()
+        load_mazeret_list()
 
 def main():
     root = tk.Tk()

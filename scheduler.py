@@ -11,7 +11,7 @@ class DutyScheduler:
     def get_active_personnel(self):
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, ad, statu FROM Personel WHERE Aktif = 1")
+        cursor.execute("SELECT id, ad, statu FROM Personel WHERE Aktif = 1 OR Aktif = 'true'")
         personnel = cursor.fetchall()
         conn.close()
         return personnel
@@ -22,6 +22,16 @@ class DutyScheduler:
         cursor.execute("SELECT id, ad, deger FROM GunDeger")
         day_values = {row[0]: {'name': row[1], 'value': row[2]} for row in cursor.fetchall()}
         conn.close()
+        
+        if not day_values:
+            default_values = [
+                (1, 'Pazartesi', 1.2), (2, 'Salı', 1.1), (3, 'Çarşamba', 1.1),
+                (4, 'Perşembe', 0.9), (5, 'Cuma', 1.4), (6, 'Cumartesi', 2.0),
+                (7, 'Pazar', 1.6), (8, 'Resmi Tatil', 2.2)
+            ]
+            for dv in default_values:
+                day_values[dv[0]] = {'name': dv[1], 'value': dv[2]}
+        
         return day_values
     
     def get_holidays(self, year, month):
@@ -84,7 +94,7 @@ class DutyScheduler:
     
     def get_weekday_id(self, weekday):
         weekday_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7}
-        return weekday_mapping[weekday]
+        return weekday_mapping.get(weekday, 1)
     
     def is_ramazan_kurban_conflict(self, person_id, target_date, existing_schedule):
         ramazan_dates = set()
@@ -158,6 +168,8 @@ class DutyScheduler:
         
         return base_score + pairing_bonus + distribution_penalty + cycle_bonus
     
+
+    
     def generate_schedule(self, year, month):
         """
         Gelişmiş nöbet programı oluşturma
@@ -167,6 +179,9 @@ class DutyScheduler:
         day_values = self.get_day_values()
         holidays = self.get_holidays(year, month)
         exemptions = self.get_exemptions(year, month)
+        
+        if not personnel:
+            return []
         
         personnel_ids = [p[0] for p in personnel]
         stats = self.get_personnel_duty_stats(personnel_ids)
@@ -196,8 +211,19 @@ class DutyScheduler:
             else:
                 day_value_id = self.get_weekday_id(weekday)
             
-            day_info = day_values[day_value_id]
-            day_type = day_info['name']
+            if day_value_id in day_values:
+                day_info = day_values[day_value_id]
+                day_type = day_info['name']
+            else:
+                weekday_names = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+                weekday_values = [1.2, 1.1, 1.1, 0.9, 1.4, 2.0, 1.6]
+                
+                if 0 <= weekday < 7:
+                    day_type = weekday_names[weekday]
+                    day_info = {'name': day_type, 'value': weekday_values[weekday]}
+                else:
+                    day_info = {'name': 'Bilinmeyen', 'value': 1.0}
+                    day_type = 'Bilinmeyen'
             
             eligible_personnel = []
             for person_id in personnel_ids:
@@ -220,6 +246,7 @@ class DutyScheduler:
                 if self.has_month_boundary_consecutive_conflict(person_id, current_date):
                     continue
                 
+                # Gelişmiş öncelik puanı hesaplama
                 priority_score = self.calculate_priority_score(
                     person_id, stats, avg_count, avg_value, current_date, 
                     schedule, day_type, monthly_stats, personnel_ids
@@ -304,17 +331,23 @@ class DutyScheduler:
         Perşembe-Cumartesi zorunlu eşleştirme kontrolü
         Eğer kişinin o ay Perşembe nöbeti varsa, farklı haftada Cumartesi zorunludur
         """
-        if target_date.weekday() != 5:  # Saturday = 5
-            return False
-        
         target_week = self.get_week_start(target_date)
         
-        for scheduled_date, scheduled_person, _ in existing_schedule:
-            if (scheduled_person == person_id and 
-                scheduled_date.weekday() == 3 and  # Thursday = 3
-                scheduled_date.month == target_date.month and
-                self.get_week_start(scheduled_date) != target_week):
-                return True
+        if target_date.weekday() == 5:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 3 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    return True
+        
+        if target_date.weekday() == 3:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 5 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    return True
         
         return False
     
@@ -323,17 +356,23 @@ class DutyScheduler:
         Cuma-Pazar zorunlu eşleştirme kontrolü
         Eğer kişinin o ay Cuma nöbeti varsa, farklı haftada Pazar zorunludur
         """
-        if target_date.weekday() != 6:  # Sunday = 6
-            return False
-        
         target_week = self.get_week_start(target_date)
         
-        for scheduled_date, scheduled_person, _ in existing_schedule:
-            if (scheduled_person == person_id and 
-                scheduled_date.weekday() == 4 and  # Friday = 4
-                scheduled_date.month == target_date.month and
-                self.get_week_start(scheduled_date) != target_week):
-                return True
+        if target_date.weekday() == 6:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 4 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    return True
+        
+        if target_date.weekday() == 4:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 6 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    return True
         
         return False
     
