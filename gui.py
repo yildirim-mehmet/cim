@@ -54,6 +54,7 @@ class DutySchedulerGUI:
         ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=5, padx=(0, 10))
         ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
         ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
+        ttk.Button(control_frame, text="Mazeret Girişi", command=self.open_mazeret_window).grid(row=1, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -177,7 +178,110 @@ class DutySchedulerGUI:
         
         cell_frame.columnconfigure(0, weight=1)
         
+        cell_frame.bind("<Button-3>", lambda e: self.show_duty_change_menu(e, date_obj, person_name))
+        
         return cell_frame
+    
+    def show_duty_change_menu(self, event, date_obj, current_person):
+        """Nöbet değiştirme menüsünü gösterir"""
+        if not current_person or current_person == "ATANMADI":
+            messagebox.showinfo("Bilgi", "Bu günde atanmış personel yok!")
+            return
+        
+        date_str = date_obj.strftime('%Y-%m-%d')
+        
+        change_window = tk.Toplevel(self.root)
+        change_window.title(f"Nöbet Değiştir - {date_str}")
+        change_window.geometry("400x300")
+        change_window.resizable(False, False)
+        
+        main_frame = ttk.Frame(change_window, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        change_window.columnconfigure(0, weight=1)
+        change_window.rowconfigure(0, weight=1)
+        
+        ttk.Label(main_frame, text=f"Tarih: {date_str}", font=('Arial', 12, 'bold')).grid(row=0, column=0, columnspan=2, pady=(0, 10))
+        ttk.Label(main_frame, text=f"Mevcut Personel: {current_person}", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, pady=(0, 10))
+        
+        ttk.Label(main_frame, text="Yeni Personel:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        
+        new_personel_var = tk.StringVar()
+        new_personel_combo = ttk.Combobox(main_frame, textvariable=new_personel_var, width=25, state="readonly")
+        new_personel_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, ad FROM Personel WHERE Aktif = 1 ORDER BY ad")
+        personnel_list = cursor.fetchall()
+        conn.close()
+        
+        new_personel_combo['values'] = [f"{p[0]} - {p[1]}" for p in personnel_list]
+        
+        main_frame.columnconfigure(1, weight=1)
+        
+        def change_duty():
+            new_personel_text = new_personel_var.get().strip()
+            
+            if not new_personel_text:
+                messagebox.showerror("Hata", "Lütfen yeni personel seçin!")
+                return
+            
+            try:
+                new_personel_id = int(new_personel_text.split(' - ')[0])
+                new_personel_name = new_personel_text.split(' - ')[1]
+                
+                if new_personel_name == current_person:
+                    messagebox.showwarning("Uyarı", "Aynı personel seçildi!")
+                    return
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT id, personelId, gunDegerId, ad, deger, esTarih, yenTarih
+                    FROM Nobet 
+                    WHERE tarih = ?
+                """, (date_str,))
+                
+                nobet_record = cursor.fetchone()
+                
+                if nobet_record:
+                    old_personel_id = nobet_record[1]
+                    
+                    cursor.execute("""
+                        UPDATE Nobet 
+                        SET personelId = ?, degisiklik = 1, esTarih = ?, yenTarih = ?
+                        WHERE id = ?
+                    """, (new_personel_id, date_str, date_str, nobet_record[0]))
+                    
+                    conn.commit()
+                    conn.close()
+                    
+                    messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{current_person} → {new_personel_name}")
+                    
+                    self.load_existing_schedule()
+                    change_window.destroy()
+                else:
+                    conn.close()
+                    messagebox.showerror("Hata", "Bu tarih için nöbet kaydı bulunamadı!")
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Nöbet değiştirme sırasında hata: {str(e)}")
+        
+        def cancel_change():
+            change_window.destroy()
+        
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=(20, 0))
+        
+        ttk.Button(btn_frame, text="Değiştir", command=change_duty).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="İptal", command=cancel_change).grid(row=0, column=1, padx=5)
+        
+        change_window.transient(self.root)
+        change_window.grab_set()
+        
+        new_personel_combo.focus()
     
     def load_initial_data(self):
         self.db.check_and_populate_sample_data()
@@ -516,6 +620,186 @@ class DutySchedulerGUI:
             if current_col > 6:
                 current_col = 0
                 current_row += 1
+    
+    def open_mazeret_window(self):
+        """Mazeret girişi penceresini açar"""
+        mazeret_window = tk.Toplevel(self.root)
+        mazeret_window.title("Mazeret Girişi")
+        mazeret_window.geometry("700x600")
+        mazeret_window.resizable(True, True)
+        
+        main_frame = ttk.Frame(mazeret_window, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        mazeret_window.columnconfigure(0, weight=1)
+        mazeret_window.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Yeni Mazeret Girişi", padding="10")
+        form_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(form_frame, text="Personel:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        personel_var = tk.StringVar()
+        personel_combo = ttk.Combobox(form_frame, textvariable=personel_var, width=30, state="readonly")
+        personel_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
+        
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, ad FROM Personel WHERE Aktif = 1 ORDER BY ad")
+        personnel_list = cursor.fetchall()
+        conn.close()
+        
+        personel_combo['values'] = [f"{p[0]} - {p[1]}" for p in personnel_list]
+        
+        ttk.Label(form_frame, text="Tarih:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        tarih_var = tk.StringVar()
+        tarih_entry = ttk.Entry(form_frame, textvariable=tarih_var, width=30)
+        tarih_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
+        tarih_entry.insert(0, datetime.now().strftime('%Y-%m-%d'))
+        
+        tut_var = tk.BooleanVar(value=False)
+        tut_check = ttk.Checkbutton(form_frame, text="Tutulacak (Bu tarihe nöbet yazılsın)", variable=tut_var)
+        tut_check.grid(row=2, column=1, sticky=tk.W, padx=(10, 0), pady=2)
+        
+        form_frame.columnconfigure(1, weight=1)
+        
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        
+        def add_mazeret():
+            personel_text = personel_var.get().strip()
+            tarih = tarih_var.get().strip()
+            tut = 1 if tut_var.get() else 0
+            
+            if not personel_text or not tarih:
+                messagebox.showerror("Hata", "Personel ve Tarih alanları zorunludur!")
+                return
+            
+            try:
+                personel_id = int(personel_text.split(' - ')[0])
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT COUNT(*) FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                             (personel_id, tarih))
+                if cursor.fetchone()[0] > 0:
+                    messagebox.showerror("Hata", "Bu personel için bu tarihte zaten mazeret kaydı var!")
+                    conn.close()
+                    return
+                
+                cursor.execute("INSERT INTO Mazeret (personelId, tarih, tut) VALUES (?, ?, ?)", 
+                             (personel_id, tarih, tut))
+                conn.commit()
+                conn.close()
+                
+                tut_text = "tutulacak" if tut else "tutulmayacak"
+                messagebox.showinfo("Başarılı", f"Mazeret kaydı eklendi! ({tut_text})")
+                
+                personel_var.set('')
+                tarih_var.set(datetime.now().strftime('%Y-%m-%d'))
+                tut_var.set(False)
+                
+                refresh_mazeret_list()
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Mazeret eklenirken hata oluştu: {str(e)}")
+        
+        def clear_form():
+            personel_var.set('')
+            tarih_var.set(datetime.now().strftime('%Y-%m-%d'))
+            tut_var.set(False)
+        
+        ttk.Button(btn_frame, text="Ekle", command=add_mazeret).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="Temizle", command=clear_form).grid(row=0, column=1, padx=5)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Mevcut Mazeret Kayıtları", padding="10")
+        list_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        
+        main_frame.rowconfigure(1, weight=1)
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        
+        columns = ('ID', 'Personel', 'Tarih', 'Durum')
+        mazeret_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
+        
+        mazeret_tree.heading('ID', text='ID')
+        mazeret_tree.heading('Personel', text='Personel')
+        mazeret_tree.heading('Tarih', text='Tarih')
+        mazeret_tree.heading('Durum', text='Durum')
+        
+        mazeret_tree.column('ID', width=50)
+        mazeret_tree.column('Personel', width=150)
+        mazeret_tree.column('Tarih', width=100)
+        mazeret_tree.column('Durum', width=120)
+        
+        mazeret_tree.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=mazeret_tree.yview)
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        mazeret_tree.configure(yscrollcommand=scrollbar.set)
+        
+        def refresh_mazeret_list():
+            for item in mazeret_tree.get_children():
+                mazeret_tree.delete(item)
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT m.id, p.ad, m.tarih, m.tut
+                    FROM Mazeret m
+                    JOIN Personel p ON m.personelId = p.id
+                    ORDER BY m.tarih DESC, p.ad
+                """)
+                mazeret_data = cursor.fetchall()
+                conn.close()
+                
+                for mazeret in mazeret_data:
+                    durum_text = "Tutulacak" if mazeret[3] else "Tutulmayacak"
+                    mazeret_tree.insert('', tk.END, values=(mazeret[0], mazeret[1], mazeret[2], durum_text))
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Mazeret listesi yüklenirken hata: {str(e)}")
+        
+        def delete_mazeret():
+            selected = mazeret_tree.selection()
+            if not selected:
+                messagebox.showwarning("Uyarı", "Lütfen silinecek mazeret kaydını seçin!")
+                return
+            
+            item = mazeret_tree.item(selected[0])
+            mazeret_id = item['values'][0]
+            
+            result = messagebox.askyesno("Onay", "Seçili mazeret kaydını silmek istediğinizden emin misiniz?")
+            if not result:
+                return
+            
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Mazeret WHERE id = ?", (mazeret_id,))
+                conn.commit()
+                conn.close()
+                
+                refresh_mazeret_list()
+                messagebox.showinfo("Başarılı", "Mazeret kaydı silindi!")
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Mazeret silinirken hata: {str(e)}")
+        
+        bottom_btn_frame = ttk.Frame(list_frame)
+        bottom_btn_frame.grid(row=1, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(bottom_btn_frame, text="Yenile", command=refresh_mazeret_list).grid(row=0, column=0, padx=5)
+        ttk.Button(bottom_btn_frame, text="Sil", command=delete_mazeret).grid(row=0, column=1, padx=5)
+        
+        refresh_mazeret_list()
+        
+        mazeret_window.transient(self.root)
+        mazeret_window.grab_set()
+        
+        personel_combo.focus()
 
 def main():
     root = tk.Tk()
