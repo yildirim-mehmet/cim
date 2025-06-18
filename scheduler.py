@@ -143,34 +143,90 @@ class DutyScheduler:
     
     def is_ramazan_kurban_conflict(self, person_id, target_date, existing_schedule):
         """
-        Ramazan-Kurban bayramı çapraz atama kontrolü
-        Ramazan bayramında nöbeti olana Kurban bayramında nöbet verilmez (ve tersi)
-        Args: person_id, target_date, existing_schedule
-        Returns: True - Çakışma var, False - Çakışma yok
+        Gelişmiş tatil çakışma kontrolü - Yıllık kapsam ve genel tatil önleme
+        
+        Bu metod iki ana kısıtlamayı kontrol eder:
+        1. Ramazan-Kurban çapraz atama: Aynı yıl içinde Ramazan nöbeti olana Kurban verilemez (ve tersi)
+        2. Genel tatil çakışma: Geçmiş tatil nöbeti olana yeni tatil verilemez (mazeret hariç)
+        
+        Mazeret sistemi: tut=1 olan mazeret kayıtları tüm çakışma kurallarını geçersiz kılar
+        
+        Args: 
+            person_id (int): Personel ID'si
+            target_date (date): Hedef nöbet tarihi
+            existing_schedule (list): Mevcut nöbet programı (kullanılmıyor, DB'den alınıyor)
+        Returns: 
+            bool: True - Çakışma var (atama yapılamaz), False - Çakışma yok (atama yapılabilir)
         """
-        ramazan_dates = set()
-        kurban_dates = set()
-        
-        for scheduled_date, scheduled_person, day_type in existing_schedule:
-            if scheduled_person == person_id:
-                if 'Ramazan' in day_type:
-                    ramazan_dates.add(scheduled_date)
-                elif 'Kurban' in day_type:
-                    kurban_dates.add(scheduled_date)
-        
         conn = self.db.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute("SELECT ad FROM Tatil WHERE tarih = ?", (target_date,))
-        result = cursor.fetchone()
+        target_holiday = cursor.fetchone()
+        
+        if not target_holiday:
+            conn.close()
+            return False  # Hedef tarih tatil değilse çakışma yok
+        
+        target_holiday_name = target_holiday[0]
+        target_year = target_date.year
+        
+        cursor.execute("""
+            SELECT t.tarih, t.ad FROM Nobet n
+            JOIN Tatil t ON n.tarih = t.tarih
+            WHERE n.personelId = ? AND strftime('%Y', n.tarih) = ?
+        """, (person_id, str(target_year)))
+        
+        yearly_holidays = cursor.fetchall()
+        
+        cursor.execute("""
+            SELECT t.tarih, t.ad FROM Nobet n
+            JOIN Tatil t ON n.tarih = t.tarih
+            WHERE n.personelId = ? AND strftime('%Y', n.tarih) < ?
+        """, (person_id, str(target_year)))
+        
+        past_holidays = cursor.fetchall()
+        
+        # Ramazan-Kurban çapraz atama kontrolü (aynı yıl)
+        has_ramazan_this_year = any('Ramazan' in holiday[1] for holiday in yearly_holidays)
+        has_kurban_this_year = any('Kurban' in holiday[1] for holiday in yearly_holidays)
+        
+        if 'Ramazan' in target_holiday_name and has_kurban_this_year:
+            # Mazeret kontrolü - tut=1 ise çakışma göz ardı et
+            cursor.execute("SELECT tut FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                         (person_id, target_date))
+            mazeret_result = cursor.fetchone()
+            if mazeret_result and mazeret_result[0] == 1:
+                conn.close()
+                return False  # Mazeret tut=1, zorunlu atama
+            conn.close()
+            return True  # Aynı yıl Kurban nöbeti var, Ramazan verilemez
+            
+        if 'Kurban' in target_holiday_name and has_ramazan_this_year:
+            # Mazeret kontrolü - tut=1 ise çakışma göz ardı et
+            cursor.execute("SELECT tut FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                         (person_id, target_date))
+            mazeret_result = cursor.fetchone()
+            if mazeret_result and mazeret_result[0] == 1:
+                conn.close()
+                return False  # Mazeret tut=1, zorunlu atama
+            conn.close()
+            return True  # Aynı yıl Ramazan nöbeti var, Kurban verilemez
+        
+        # Genel tatil çakışma kontrolü - geçmişte tatil nöbeti varsa yeni tatil verilemez
+        if yearly_holidays or past_holidays:
+            # Mazeret kontrolü - tut=1 ise çakışma göz ardı et
+            cursor.execute("SELECT tut FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                         (person_id, target_date))
+            mazeret_result = cursor.fetchone()
+            if mazeret_result and mazeret_result[0] == 1:
+                conn.close()
+                return False  # Mazeret tut=1, zorunlu atama - çakışma göz ardı et
+            
+            conn.close()
+            return True  # Geçmişte tatil nöbeti varsa yeni tatil verilemez
+        
         conn.close()
-        
-        if result:
-            holiday_name = result[0]
-            if 'Ramazan' in holiday_name and kurban_dates:
-                return True
-            if 'Kurban' in holiday_name and ramazan_dates:
-                return True
-        
         return False
     
     def has_thursday_saturday_conflict(self, person_id, target_date, existing_schedule):
