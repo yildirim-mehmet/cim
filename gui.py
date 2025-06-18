@@ -1575,13 +1575,27 @@ Hastane ve klinik personeli için gelişmiş nöbet programı yönetim sistemi
 • Cumartesi yazılana aynı ay farklı haftada Perşembe yazılmaya zorlanır
 • Cuma yazılana aynı ay farklı haftada Pazar yazılmaya zorlanır
 • Pazar yazılana aynı ay farklı haftada Cuma yazılmaya zorlanır
-• Ramazan ve Kurban bayramlarında çapraz atama yapılmaz
+• Ramazan ve Kurban bayramlarında çapraz atama yapılmaz (aynı yıl kapsamında)
+• Geçmişte tatil nöbeti olan personele yeni tatil nöbeti verilemez
+• Mazeret tut=1 ile tatil çakışma kuralları geçersiz kılınabilir
 • Önceki ayın son günü nöbetçi olan, sonraki ayın ilk günü nöbetçi olmaz
 
 🎯 Öncelik Sistemi:
-• Mazeret tut=1 tüm kısıtlamaları geçersiz kılar
+• Mazeret tut=1 tüm kısıtlamaları geçersiz kılar (tatil çakışmaları dahil)
 • Mazeret tut=0 kesinlikle hariç tutar
 • Aktif olmayan personele nöbet verilmez
+
+🏥 TATİL ÇAKIŞMA KURALLARI:
+
+Ramazan-Kurban Çapraz Atama:
+• Aynı yıl içinde Ramazan nöbeti olan personele Kurban nöbeti verilemez
+• Aynı yıl içinde Kurban nöbeti olan personele Ramazan nöbeti verilemez
+• Bu kural yıllık kapsamda uygulanır (aylık değil)
+
+Genel Tatil Çakışma Önleme:
+• Geçmişte herhangi bir tatil nöbeti olan personele yeni tatil nöbeti verilemez
+• Bu kural tüm tatil türleri için geçerlidir (Ramazan, Kurban, Resmi Tatil)
+• Mazeret tut=1 ile bu kural geçersiz kılınabilir
 
 📅 GÜN DEĞERLERİ:
 
