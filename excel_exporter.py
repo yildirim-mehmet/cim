@@ -85,6 +85,70 @@ class ExcelExporter:
         
         return schedule_dict
     
+    def export_in_memory_schedule(self, schedule_data, year, month, filename=None):
+        if not filename:
+            filename = f"nobet_programi_{year}_{month:02d}.xlsx"
+        
+        schedule_dict = {}
+        for scheduled_date, person_id, day_type in schedule_data:
+            if person_id:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT ad, statu FROM Personel WHERE id = ?", (person_id,))
+                person_info = cursor.fetchone()
+                conn.close()
+                
+                if person_info:
+                    schedule_dict[scheduled_date] = {
+                        'name': person_info[0],
+                        'status': person_info[1]
+                    }
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"{year} {calendar.month_name[month]}"
+        
+        days_in_month = calendar.monthrange(year, month)[1]
+        first_weekday = calendar.monthrange(year, month)[0]
+        
+        weekdays = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+        
+        for col, day_name in enumerate(weekdays, 1):
+            ws.cell(row=1, column=col, value=day_name)
+            ws.cell(row=1, column=col).font = Font(bold=True)
+            ws.cell(row=1, column=col).alignment = Alignment(horizontal='center')
+        
+        current_row = 2
+        current_col = first_weekday + 1
+        
+        for day in range(1, days_in_month + 1):
+            current_date = date(year, month, day)
+            
+            cell_value = f"{day}"
+            if current_date in schedule_dict:
+                person_info = schedule_dict[current_date]
+                cell_value += f"\n{person_info['name']}\n({person_info['status']})"
+            
+            cell = ws.cell(row=current_row, column=current_col, value=cell_value)
+            cell.alignment = Alignment(horizontal='center', vertical='top', wrap_text=True)
+            
+            if current_date in schedule_dict:
+                cell.fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+            
+            current_col += 1
+            if current_col > 7:
+                current_col = 1
+                current_row += 1
+        
+        for col in range(1, 8):
+            ws.column_dimensions[chr(64 + col)].width = 15
+        
+        for row in range(2, current_row + 1):
+            ws.row_dimensions[row].height = 60
+        
+        wb.save(filename)
+        return filename
+    
     def export_personnel_summary(self, year, month, filename=None):
         if not filename:
             filename = f"personel_ozet_{year}_{month:02d}.xlsx"
