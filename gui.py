@@ -712,18 +712,24 @@ class DutySchedulerGUI:
         mazeret_date_frame.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
         tarih_var.set(datetime.now().strftime('%d.%m.%Y'))
         
+        ttk.Label(form_frame, text="Ek Gün Sayısı:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ek_gun_var = tk.StringVar(value="0")
+        ek_gun_entry = ttk.Entry(form_frame, textvariable=ek_gun_var, width=10)
+        ek_gun_entry.grid(row=2, column=1, sticky=tk.W, padx=(10, 0), pady=2)
+        
         tut_var = tk.BooleanVar(value=False)
         tut_check = ttk.Checkbutton(form_frame, text="Tutulacak (Bu tarihe nöbet yazılsın)", variable=tut_var)
-        tut_check.grid(row=2, column=1, sticky=tk.W, padx=(10, 0), pady=2)
+        tut_check.grid(row=3, column=1, sticky=tk.W, padx=(10, 0), pady=2)
         
         form_frame.columnconfigure(1, weight=1)
         
         btn_frame = ttk.Frame(form_frame)
-        btn_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        btn_frame.grid(row=4, column=0, columnspan=2, pady=(10, 0))
         
         def add_mazeret():
             personel_text = personel_var.get().strip()
             tarih_str = tarih_var.get().strip()
+            ek_gun_str = ek_gun_var.get().strip()
             tut = 1 if tut_var.get() else 0
             
             if not personel_text or not tarih_str:
@@ -733,7 +739,16 @@ class DutySchedulerGUI:
             try:
                 personel_id = int(personel_text.split(' - ')[0])
                 
-                from datetime import datetime
+                try:
+                    ek_gun_sayisi = int(ek_gun_str) if ek_gun_str else 0
+                    if ek_gun_sayisi < 0:
+                        messagebox.showerror("Hata", "Ek gün sayısı negatif olamaz!")
+                        return
+                except ValueError:
+                    messagebox.showerror("Hata", "Ek gün sayısı geçerli bir sayı olmalıdır!")
+                    return
+                
+                from datetime import datetime, timedelta
                 try:
                     tarih_obj = datetime.strptime(tarih_str, '%d.%m.%Y')
                     tarih_db = tarih_obj.strftime('%Y-%m-%d')
@@ -741,6 +756,7 @@ class DutySchedulerGUI:
                     try:
                         tarih_obj = datetime.strptime(tarih_str, '%Y-%m-%d')
                         tarih_db = tarih_str
+                        tarih_obj = datetime.strptime(tarih_str, '%Y-%m-%d')
                     except ValueError:
                         messagebox.showerror("Hata", "Geçersiz tarih formatı! (GG.AA.YYYY formatında girin)")
                         return
@@ -748,23 +764,42 @@ class DutySchedulerGUI:
                 conn = self.db.get_connection()
                 cursor = conn.cursor()
                 
-                cursor.execute("SELECT COUNT(*) FROM Mazeret WHERE personelId = ? AND tarih = ?", 
-                             (personel_id, tarih_db))
-                if cursor.fetchone()[0] > 0:
-                    messagebox.showerror("Hata", "Bu personel için bu tarihte zaten mazeret kaydı var!")
-                    conn.close()
-                    return
+                eklenen_tarihler = []
+                atlanan_tarihler = []
                 
-                cursor.execute("INSERT INTO Mazeret (personelId, tarih, tut) VALUES (?, ?, ?)", 
-                             (personel_id, tarih_db, tut))
+                for i in range(ek_gun_sayisi + 1):  # +1 çünkü başlangıç tarihi de dahil
+                    hedef_tarih = tarih_obj + timedelta(days=i)
+                    hedef_tarih_db = hedef_tarih.strftime('%Y-%m-%d')
+                    
+                    cursor.execute("SELECT COUNT(*) FROM Mazeret WHERE personelId = ? AND tarih = ?", 
+                                 (personel_id, hedef_tarih_db))
+                    if cursor.fetchone()[0] > 0:
+                        atlanan_tarihler.append(hedef_tarih.strftime('%d.%m.%Y'))
+                        continue
+                    
+                    cursor.execute("INSERT INTO Mazeret (personelId, tarih, tut) VALUES (?, ?, ?)", 
+                                 (personel_id, hedef_tarih_db, tut))
+                    eklenen_tarihler.append(hedef_tarih.strftime('%d.%m.%Y'))
+                
                 conn.commit()
                 conn.close()
                 
                 tut_text = "tutulacak" if tut else "tutulmayacak"
-                messagebox.showinfo("Başarılı", f"Mazeret kaydı eklendi! ({tut_text})")
+                mesaj = f"Mazeret kayıtları eklendi! ({tut_text})\n\n"
+                
+                if eklenen_tarihler:
+                    mesaj += f"Eklenen tarihler ({len(eklenen_tarihler)} adet):\n"
+                    mesaj += ", ".join(eklenen_tarihler)
+                
+                if atlanan_tarihler:
+                    mesaj += f"\n\nAtlanan tarihler (zaten mevcut - {len(atlanan_tarihler)} adet):\n"
+                    mesaj += ", ".join(atlanan_tarihler)
+                
+                messagebox.showinfo("Başarılı", mesaj)
                 
                 personel_var.set('')
                 tarih_var.set(datetime.now().strftime('%d.%m.%Y'))
+                ek_gun_var.set("0")
                 tut_var.set(False)
                 
                 refresh_mazeret_list()
@@ -774,7 +809,8 @@ class DutySchedulerGUI:
         
         def clear_form():
             personel_var.set('')
-            tarih_var.set(datetime.now().strftime('%Y-%m-%d'))
+            tarih_var.set(datetime.now().strftime('%d.%m.%Y'))
+            ek_gun_var.set("0")
             tut_var.set(False)
         
         ttk.Button(btn_frame, text="Ekle", command=add_mazeret).grid(row=0, column=0, padx=5)
@@ -1540,6 +1576,7 @@ Hastane ve klinik personeli için gelişmiş nöbet programı yönetim sistemi
 • Personel mazeret kayıtları
 • Zorunlu atama (tut=1) ve hariç tutma (tut=0) seçenekleri
 • Takvim ile tarih seçimi
+• Çoklu gün mazeret girişi (ek gün sayısı ile ardışık günler)
 
 📊 Eski Nöbetler:
 • Geçmiş nöbet kayıtlarını görüntüleme
@@ -1638,6 +1675,14 @@ Hafta Sonu:
 • Tatil günlerini önceden tanımlayın
 • Personel durumlarını güncel tutun
 • Düzenli olarak Excel raporları alın
+
+📝 ÇOKLU GÜN MAZERET GİRİŞİ:
+• Mazeret ekranında "Ek Gün Sayısı" alanı bulunur (varsayılan: 0)
+• Değer 0 ise sadece seçilen tarihe mazeret eklenir
+• Değer 0'dan büyükse seçilen tarih + ek gün sayısı kadar ardışık güne mazeret eklenir
+• Örnek: Tarih 15.06.2025, Ek Gün Sayısı 3 → 15, 16, 17, 18 Haziran'a mazeret eklenir
+• Zaten mevcut olan tarihler atlanır ve rapor edilir
+• Tüm eklenen günler aynı tut değerini (0 veya 1) alır
 
 🔄 GÜNCELLEME NOTLARI:
 • Ana ekran otomatik yenilenir
