@@ -55,6 +55,9 @@ class DutySchedulerGUI:
         ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
         ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
         ttk.Button(control_frame, text="Mazeret Girişi", command=self.open_mazeret_window).grid(row=1, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
+        ttk.Button(control_frame, text="Eski Nöbetler", command=self.open_old_duties_window).grid(row=1, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
+        ttk.Button(control_frame, text="Gün Değerleri", command=self.open_gun_deger_window).grid(row=2, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
+        ttk.Button(control_frame, text="Tatil Yönetimi", command=self.open_tatil_window).grid(row=2, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -439,8 +442,12 @@ class DutySchedulerGUI:
             )
             
             if filename:
-                self.exporter.export_monthly_schedule(self.selected_year, self.selected_month, filename)
-                messagebox.showinfo("Başarılı", f"Excel dosyası kaydedildi: {filename}")
+                if hasattr(self, 'current_schedule') and self.current_schedule:
+                    self.exporter.export_in_memory_schedule(self.current_schedule, self.selected_year, self.selected_month, filename)
+                    messagebox.showinfo("Başarılı", f"Excel dosyası kaydedildi: {filename}\n(Hafızadaki programdan oluşturuldu)")
+                else:
+                    self.exporter.export_monthly_schedule(self.selected_year, self.selected_month, filename)
+                    messagebox.showinfo("Başarılı", f"Excel dosyası kaydedildi: {filename}")
         except Exception as e:
             messagebox.showerror("Hata", f"Excel export sırasında hata oluştu: {str(e)}")
     
@@ -695,9 +702,9 @@ class DutySchedulerGUI:
         
         ttk.Label(form_frame, text="Tarih:").grid(row=1, column=0, sticky=tk.W, pady=2)
         tarih_var = tk.StringVar()
-        tarih_entry = ttk.Entry(form_frame, textvariable=tarih_var, width=30)
-        tarih_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
-        tarih_entry.insert(0, datetime.now().strftime('%Y-%m-%d'))
+        mazeret_date_frame = self.create_date_picker(form_frame, tarih_var, "")
+        mazeret_date_frame.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
+        tarih_var.set(datetime.now().strftime('%d.%m.%Y'))
         
         tut_var = tk.BooleanVar(value=False)
         tut_check = ttk.Checkbutton(form_frame, text="Tutulacak (Bu tarihe nöbet yazılsın)", variable=tut_var)
@@ -710,28 +717,40 @@ class DutySchedulerGUI:
         
         def add_mazeret():
             personel_text = personel_var.get().strip()
-            tarih = tarih_var.get().strip()
+            tarih_str = tarih_var.get().strip()
             tut = 1 if tut_var.get() else 0
             
-            if not personel_text or not tarih:
+            if not personel_text or not tarih_str:
                 messagebox.showerror("Hata", "Personel ve Tarih alanları zorunludur!")
                 return
             
             try:
                 personel_id = int(personel_text.split(' - ')[0])
                 
+                from datetime import datetime
+                try:
+                    tarih_obj = datetime.strptime(tarih_str, '%d.%m.%Y')
+                    tarih_db = tarih_obj.strftime('%Y-%m-%d')
+                except ValueError:
+                    try:
+                        tarih_obj = datetime.strptime(tarih_str, '%Y-%m-%d')
+                        tarih_db = tarih_str
+                    except ValueError:
+                        messagebox.showerror("Hata", "Geçersiz tarih formatı! (GG.AA.YYYY formatında girin)")
+                        return
+                
                 conn = self.db.get_connection()
                 cursor = conn.cursor()
                 
                 cursor.execute("SELECT COUNT(*) FROM Mazeret WHERE personelId = ? AND tarih = ?", 
-                             (personel_id, tarih))
+                             (personel_id, tarih_db))
                 if cursor.fetchone()[0] > 0:
                     messagebox.showerror("Hata", "Bu personel için bu tarihte zaten mazeret kaydı var!")
                     conn.close()
                     return
                 
                 cursor.execute("INSERT INTO Mazeret (personelId, tarih, tut) VALUES (?, ?, ?)", 
-                             (personel_id, tarih, tut))
+                             (personel_id, tarih_db, tut))
                 conn.commit()
                 conn.close()
                 
@@ -739,7 +758,7 @@ class DutySchedulerGUI:
                 messagebox.showinfo("Başarılı", f"Mazeret kaydı eklendi! ({tut_text})")
                 
                 personel_var.set('')
-                tarih_var.set(datetime.now().strftime('%Y-%m-%d'))
+                tarih_var.set(datetime.now().strftime('%d.%m.%Y'))
                 tut_var.set(False)
                 
                 refresh_mazeret_list()
@@ -798,8 +817,15 @@ class DutySchedulerGUI:
                 conn.close()
                 
                 for mazeret in mazeret_data:
+                    from datetime import datetime
+                    try:
+                        tarih_obj = datetime.strptime(mazeret[2], '%Y-%m-%d')
+                        tarih_tr = tarih_obj.strftime('%d.%m.%Y')
+                    except:
+                        tarih_tr = mazeret[2]
+                    
                     durum_text = "Tutulacak" if mazeret[3] else "Tutulmayacak"
-                    mazeret_tree.insert('', tk.END, values=(mazeret[0], mazeret[1], mazeret[2], durum_text))
+                    mazeret_tree.insert('', tk.END, values=(mazeret[0], mazeret[1], tarih_tr, durum_text))
                     
             except Exception as e:
                 messagebox.showerror("Hata", f"Mazeret listesi yüklenirken hata: {str(e)}")
@@ -842,6 +868,615 @@ class DutySchedulerGUI:
         mazeret_window.grab_set()
         
         personel_combo.focus()
+    
+
+    
+    def open_old_duties_window(self):
+        old_duties_window = tk.Toplevel(self.root)
+        old_duties_window.title("Eski Nöbetler")
+        old_duties_window.geometry("800x600")
+        old_duties_window.transient(self.root)
+        old_duties_window.grab_set()
+        
+        main_frame = ttk.Frame(old_duties_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        date_frame = ttk.LabelFrame(main_frame, text="Tarih Seçimi", padding="10")
+        date_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(date_frame, text="Yıl:").grid(row=0, column=0, padx=(0, 5))
+        old_year_var = tk.StringVar(value=str(self.selected_year))
+        old_year_combo = ttk.Combobox(date_frame, textvariable=old_year_var, width=10)
+        old_year_combo['values'] = [str(y) for y in range(2020, 2030)]
+        old_year_combo.grid(row=0, column=1, padx=(0, 20))
+        
+        ttk.Label(date_frame, text="Ay:").grid(row=0, column=2, padx=(0, 5))
+        old_month_var = tk.StringVar(value=str(self.selected_month))
+        old_month_combo = ttk.Combobox(date_frame, textvariable=old_month_var, width=15)
+        old_month_combo['values'] = [f"{i} - {calendar.month_name[i]}" for i in range(1, 13)]
+        old_month_combo.grid(row=0, column=3, padx=(0, 20))
+        
+        def refresh_old_duties():
+            try:
+                year = int(old_year_var.get())
+                month_text = old_month_var.get()
+                if ' - ' in month_text:
+                    month = int(month_text.split(' - ')[0])
+                else:
+                    month = int(month_text)
+                
+                for item in old_duties_tree.get_children():
+                    old_duties_tree.delete(item)
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT n.tarih, p.ad, p.statu, n.deger, n.degisiklik
+                    FROM Nobet n
+                    JOIN Personel p ON n.personelId = p.id
+                    WHERE strftime('%Y-%m', n.tarih) = ?
+                    ORDER BY n.tarih
+                """, (f"{year:04d}-{month:02d}",))
+                
+                duties = cursor.fetchall()
+                conn.close()
+                
+                for duty in duties:
+                    date_str = duty[0]
+                    person_name = duty[1]
+                    person_status = duty[2]
+                    duty_value = duty[3]
+                    is_changed = "Evet" if duty[4] else "Hayır"
+                    
+                    old_duties_tree.insert('', 'end', values=(date_str, person_name, person_status, duty_value, is_changed))
+                
+                status_label.config(text=f"Toplam {len(duties)} nöbet kaydı bulundu.")
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Nöbet kayıtları yüklenirken hata oluştu: {str(e)}")
+        
+        ttk.Button(date_frame, text="Listele", command=refresh_old_duties).grid(row=0, column=4, padx=(10, 0))
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Nöbet Kayıtları", padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        old_duties_tree = ttk.Treeview(list_frame, columns=('Tarih', 'Personel', 'Statü', 'Puan', 'Değiştirildi'), show='headings')
+        old_duties_tree.heading('Tarih', text='Tarih')
+        old_duties_tree.heading('Personel', text='Personel')
+        old_duties_tree.heading('Statü', text='Statü')
+        old_duties_tree.heading('Puan', text='Puan')
+        old_duties_tree.heading('Değiştirildi', text='Değiştirildi')
+        
+        old_duties_tree.column('Tarih', width=100)
+        old_duties_tree.column('Personel', width=120)
+        old_duties_tree.column('Statü', width=100)
+        old_duties_tree.column('Puan', width=80)
+        old_duties_tree.column('Değiştirildi', width=100)
+        
+        old_duties_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=old_duties_tree.yview)
+        old_duties_tree.configure(yscrollcommand=old_duties_scroll.set)
+        
+        old_duties_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        old_duties_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        bottom_frame = ttk.Frame(main_frame)
+        bottom_frame.pack(fill=tk.X)
+        
+        status_label = ttk.Label(bottom_frame, text="Tarih seçip 'Listele' butonuna basın.")
+        status_label.pack(side=tk.LEFT)
+        
+        def delete_month_duties():
+            try:
+                year = int(old_year_var.get())
+                month_text = old_month_var.get()
+                if ' - ' in month_text:
+                    month = int(month_text.split(' - ')[0])
+                else:
+                    month = int(month_text)
+                
+                result = messagebox.askyesno("Onay", 
+                    f"{year}/{month:02d} ayına ait tüm nöbet kayıtları silinecek.\nEmin misiniz?")
+                
+                if result:
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM Nobet WHERE strftime('%Y-%m', tarih) = ?", 
+                                 (f"{year:04d}-{month:02d}",))
+                    deleted_count = cursor.rowcount
+                    conn.commit()
+                    conn.close()
+                    
+                    messagebox.showinfo("Başarılı", f"{deleted_count} nöbet kaydı silindi.")
+                    refresh_old_duties()
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Silme işlemi sırasında hata oluştu: {str(e)}")
+        
+        ttk.Button(bottom_frame, text="Seçili Ayı Sil", command=delete_month_duties).pack(side=tk.RIGHT)
+        
+        refresh_old_duties()
+    
+    def open_gun_deger_window(self):
+        gun_deger_window = tk.Toplevel(self.root)
+        gun_deger_window.title("Gün Değerleri Yönetimi")
+        gun_deger_window.geometry("600x500")
+        gun_deger_window.transient(self.root)
+        gun_deger_window.grab_set()
+        
+        main_frame = ttk.Frame(gun_deger_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Gün Değeri Ekle/Düzenle", padding="10")
+        form_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(form_frame, text="Ad:").grid(row=0, column=0, padx=(0, 5), sticky=tk.W)
+        ad_var = tk.StringVar()
+        ad_entry = ttk.Entry(form_frame, textvariable=ad_var, width=30)
+        ad_entry.grid(row=0, column=1, padx=(0, 20), sticky=(tk.W, tk.E))
+        
+        ttk.Label(form_frame, text="Değer:").grid(row=0, column=2, padx=(0, 5), sticky=tk.W)
+        deger_var = tk.StringVar()
+        deger_entry = ttk.Entry(form_frame, textvariable=deger_var, width=15)
+        deger_entry.grid(row=0, column=3, padx=(0, 10), sticky=(tk.W, tk.E))
+        
+        form_frame.columnconfigure(1, weight=1)
+        
+        selected_gun_deger_id = tk.StringVar()
+        
+        def add_gun_deger():
+            try:
+                ad = ad_var.get().strip()
+                deger = float(deger_var.get().strip())
+                
+                if not ad:
+                    messagebox.showwarning("Uyarı", "Ad alanı boş olamaz!")
+                    return
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                if selected_gun_deger_id.get():
+                    cursor.execute("UPDATE GunDeger SET ad = ?, deger = ? WHERE id = ?", 
+                                 (ad, deger, int(selected_gun_deger_id.get())))
+                    messagebox.showinfo("Başarılı", "Gün değeri güncellendi!")
+                else:
+                    cursor.execute("INSERT INTO GunDeger (ad, deger) VALUES (?, ?)", (ad, deger))
+                    messagebox.showinfo("Başarılı", "Gün değeri eklendi!")
+                
+                conn.commit()
+                conn.close()
+                
+                clear_form()
+                refresh_gun_deger_list()
+                
+            except ValueError:
+                messagebox.showerror("Hata", "Değer sayısal olmalıdır!")
+            except Exception as e:
+                messagebox.showerror("Hata", f"Gün değeri eklenirken hata oluştu: {str(e)}")
+        
+        def clear_form():
+            ad_var.set("")
+            deger_var.set("")
+            selected_gun_deger_id.set("")
+        
+        button_frame = ttk.Frame(form_frame)
+        button_frame.grid(row=1, column=0, columnspan=4, pady=(10, 0))
+        
+        ttk.Button(button_frame, text="Ekle/Güncelle", command=add_gun_deger).grid(row=0, column=0, padx=5)
+        ttk.Button(button_frame, text="Temizle", command=clear_form).grid(row=0, column=1, padx=5)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Gün Değerleri", padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        gun_deger_tree = ttk.Treeview(list_frame, columns=('ID', 'Ad', 'Değer'), show='headings')
+        gun_deger_tree.heading('ID', text='ID')
+        gun_deger_tree.heading('Ad', text='Ad')
+        gun_deger_tree.heading('Değer', text='Değer')
+        
+        gun_deger_tree.column('ID', width=50)
+        gun_deger_tree.column('Ad', width=200)
+        gun_deger_tree.column('Değer', width=100)
+        
+        gun_deger_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=gun_deger_tree.yview)
+        gun_deger_tree.configure(yscrollcommand=gun_deger_scroll.set)
+        
+        gun_deger_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        gun_deger_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        def refresh_gun_deger_list():
+            try:
+                for item in gun_deger_tree.get_children():
+                    gun_deger_tree.delete(item)
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, ad, deger FROM GunDeger ORDER BY id")
+                gun_degerleri = cursor.fetchall()
+                conn.close()
+                
+                for gun_deger in gun_degerleri:
+                    gun_deger_tree.insert('', 'end', values=gun_deger)
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Gün değerleri yüklenirken hata oluştu: {str(e)}")
+        
+        def on_gun_deger_select(event):
+            selection = gun_deger_tree.selection()
+            if selection:
+                item = gun_deger_tree.item(selection[0])
+                values = item['values']
+                selected_gun_deger_id.set(str(values[0]))
+                ad_var.set(values[1])
+                deger_var.set(str(values[2]))
+        
+        gun_deger_tree.bind('<<TreeviewSelect>>', on_gun_deger_select)
+        
+        def delete_gun_deger():
+            selection = gun_deger_tree.selection()
+            if not selection:
+                messagebox.showwarning("Uyarı", "Silinecek gün değerini seçin!")
+                return
+            
+            try:
+                item = gun_deger_tree.item(selection[0])
+                gun_deger_id = item['values'][0]
+                gun_deger_ad = item['values'][1]
+                
+                result = messagebox.askyesno("Onay", f"'{gun_deger_ad}' gün değeri silinecek. Emin misiniz?")
+                if result:
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM GunDeger WHERE id = ?", (gun_deger_id,))
+                    conn.commit()
+                    conn.close()
+                    
+                    clear_form()
+                    refresh_gun_deger_list()
+                    messagebox.showinfo("Başarılı", "Gün değeri silindi!")
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Gün değeri silinirken hata oluştu: {str(e)}")
+        
+        bottom_btn_frame = ttk.Frame(list_frame)
+        bottom_btn_frame.pack(pady=(10, 0))
+        
+        ttk.Button(bottom_btn_frame, text="Yenile", command=refresh_gun_deger_list).grid(row=0, column=0, padx=5)
+        ttk.Button(bottom_btn_frame, text="Sil", command=delete_gun_deger).grid(row=0, column=1, padx=5)
+        
+        refresh_gun_deger_list()
+        ad_entry.focus()
+    
+    def open_tatil_window(self):
+        tatil_window = tk.Toplevel(self.root)
+        tatil_window.title("Tatil Yönetimi")
+        tatil_window.geometry("700x600")
+        tatil_window.transient(self.root)
+        tatil_window.grab_set()
+        
+        main_frame = ttk.Frame(tatil_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        form_frame = ttk.LabelFrame(main_frame, text="Tatil Ekle/Düzenle", padding="10")
+        form_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(form_frame, text="Gün Değeri:").grid(row=0, column=0, padx=(0, 5), sticky=tk.W)
+        gun_deger_var = tk.StringVar()
+        gun_deger_combo = ttk.Combobox(form_frame, textvariable=gun_deger_var, width=20, state="readonly")
+        gun_deger_combo.grid(row=0, column=1, padx=(0, 20), sticky=(tk.W, tk.E))
+        
+        ttk.Label(form_frame, text="Ad:").grid(row=0, column=2, padx=(0, 5), sticky=tk.W)
+        tatil_ad_var = tk.StringVar()
+        tatil_ad_entry = ttk.Entry(form_frame, textvariable=tatil_ad_var, width=25)
+        tatil_ad_entry.grid(row=0, column=3, padx=(0, 10), sticky=(tk.W, tk.E))
+        
+        ttk.Label(form_frame, text="Tarih:").grid(row=1, column=0, padx=(0, 5), sticky=tk.W)
+        tarih_var = tk.StringVar()
+        tatil_date_frame = self.create_date_picker(form_frame, tarih_var, "")
+        tatil_date_frame.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        form_frame.columnconfigure(1, weight=1)
+        form_frame.columnconfigure(3, weight=1)
+        
+        selected_tatil_id = tk.StringVar()
+        
+        def load_gun_degerleri():
+            try:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, ad, deger FROM GunDeger ORDER BY ad")
+                gun_degerleri = cursor.fetchall()
+                conn.close()
+                
+                gun_deger_values = [f"{gd[1]} ({gd[2]} puan)" for gd in gun_degerleri]
+                gun_deger_combo['values'] = gun_deger_values
+                
+                if not hasattr(self, '_gun_deger_map'):
+                    self._gun_deger_map = {}
+                
+                for gd in gun_degerleri:
+                    self._gun_deger_map[f"{gd[1]} ({gd[2]} puan)"] = gd[0]
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Gün değerleri yüklenirken hata oluştu: {str(e)}")
+        
+        def add_tatil():
+            try:
+                gun_deger_text = gun_deger_var.get()
+                if not gun_deger_text or ' (' not in gun_deger_text:
+                    messagebox.showwarning("Uyarı", "Gün değeri seçin!")
+                    return
+                
+                gun_deger_id = self._gun_deger_map.get(gun_deger_text)
+                if not gun_deger_id:
+                    messagebox.showerror("Hata", "Geçersiz gün değeri seçimi!")
+                    return
+                tatil_ad = tatil_ad_var.get().strip()
+                tarih_str = tarih_var.get().strip()
+                
+                if not tatil_ad:
+                    messagebox.showwarning("Uyarı", "Tatil adı boş olamaz!")
+                    return
+                
+                if not tarih_str:
+                    messagebox.showwarning("Uyarı", "Tarih seçin!")
+                    return
+                
+                from datetime import datetime
+                try:
+                    tarih_obj = datetime.strptime(tarih_str, '%d.%m.%Y')
+                    tarih = tarih_obj.strftime('%Y-%m-%d')
+                except ValueError:
+                    try:
+                        tarih_obj = datetime.strptime(tarih_str, '%Y-%m-%d')
+                        tarih = tarih_str
+                    except ValueError:
+                        messagebox.showerror("Hata", "Geçersiz tarih formatı! (GG.AA.YYYY formatında girin)")
+                        return
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                if selected_tatil_id.get():
+                    cursor.execute("UPDATE Tatil SET gunDegerId = ?, ad = ?, tarih = ? WHERE id = ?", 
+                                 (gun_deger_id, tatil_ad, tarih, int(selected_tatil_id.get())))
+                    messagebox.showinfo("Başarılı", "Tatil güncellendi!")
+                else:
+                    cursor.execute("INSERT INTO Tatil (gunDegerId, ad, tarih) VALUES (?, ?, ?)", 
+                                 (gun_deger_id, tatil_ad, tarih))
+                    messagebox.showinfo("Başarılı", "Tatil eklendi!")
+                
+                conn.commit()
+                conn.close()
+                
+                clear_tatil_form()
+                refresh_tatil_list()
+                
+            except Exception as e:
+                messagebox.showerror("Hata", f"Tatil eklenirken hata oluştu: {str(e)}")
+        
+        def clear_tatil_form():
+            gun_deger_var.set("")
+            tatil_ad_var.set("")
+            tarih_var.set("")
+            selected_tatil_id.set("")
+        
+        button_frame = ttk.Frame(form_frame)
+        button_frame.grid(row=2, column=0, columnspan=4, pady=(10, 0))
+        
+        ttk.Button(button_frame, text="Ekle/Güncelle", command=add_tatil).grid(row=0, column=0, padx=5)
+        ttk.Button(button_frame, text="Temizle", command=clear_tatil_form).grid(row=0, column=1, padx=5)
+        
+        list_frame = ttk.LabelFrame(main_frame, text="Tatiller", padding="10")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        tatil_tree = ttk.Treeview(list_frame, columns=('ID', 'Gün Değeri', 'Ad', 'Tarih'), show='headings')
+        tatil_tree.heading('ID', text='ID')
+        tatil_tree.heading('Gün Değeri', text='Gün Değeri')
+        tatil_tree.heading('Ad', text='Ad')
+        tatil_tree.heading('Tarih', text='Tarih')
+        
+        tatil_tree.column('ID', width=50)
+        tatil_tree.column('Gün Değeri', width=150)
+        tatil_tree.column('Ad', width=200)
+        tatil_tree.column('Tarih', width=100)
+        
+        tatil_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=tatil_tree.yview)
+        tatil_tree.configure(yscrollcommand=tatil_scroll.set)
+        
+        tatil_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tatil_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        def refresh_tatil_list():
+            try:
+                for item in tatil_tree.get_children():
+                    tatil_tree.delete(item)
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT t.id, g.ad, t.ad, t.tarih, t.gunDegerId
+                    FROM Tatil t
+                    JOIN GunDeger g ON t.gunDegerId = g.id
+                    ORDER BY t.tarih
+                """)
+                tatiller = cursor.fetchall()
+                conn.close()
+                
+                for tatil in tatiller:
+                    from datetime import datetime
+                    try:
+                        tarih_obj = datetime.strptime(tatil[3], '%Y-%m-%d')
+                        tarih_tr = tarih_obj.strftime('%d.%m.%Y')
+                    except:
+                        tarih_tr = tatil[3]
+                    
+                    tatil_tree.insert('', 'end', values=(tatil[0], tatil[1], tatil[2], tarih_tr))
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Tatiller yüklenirken hata oluştu: {str(e)}")
+        
+        def on_tatil_select(event):
+            selection = tatil_tree.selection()
+            if selection:
+                item = tatil_tree.item(selection[0])
+                values = item['values']
+                selected_tatil_id.set(str(values[0]))
+                
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT gunDegerId, ad, tarih FROM Tatil WHERE id = ?", (values[0],))
+                tatil_data = cursor.fetchone()
+                conn.close()
+                
+                if tatil_data:
+                    gun_deger_id = tatil_data[0]
+                    cursor = self.db.get_connection().cursor()
+                    cursor.execute("SELECT ad, deger FROM GunDeger WHERE id = ?", (gun_deger_id,))
+                    gun_deger_info = cursor.fetchone()
+                    cursor.connection.close()
+                    
+                    if gun_deger_info:
+                        gun_deger_var.set(f"{gun_deger_info[0]} ({gun_deger_info[1]} puan)")
+                    
+                    tatil_ad_var.set(tatil_data[1])
+                    
+                    from datetime import datetime
+                    try:
+                        tarih_obj = datetime.strptime(tatil_data[2], '%Y-%m-%d')
+                        tarih_var.set(tarih_obj.strftime('%d.%m.%Y'))
+                    except:
+                        tarih_var.set(tatil_data[2])
+        
+        tatil_tree.bind('<<TreeviewSelect>>', on_tatil_select)
+        
+        def delete_tatil():
+            selection = tatil_tree.selection()
+            if not selection:
+                messagebox.showwarning("Uyarı", "Silinecek tatili seçin!")
+                return
+            
+            try:
+                item = tatil_tree.item(selection[0])
+                tatil_id = item['values'][0]
+                tatil_ad = item['values'][2]
+                
+                result = messagebox.askyesno("Onay", f"'{tatil_ad}' tatili silinecek. Emin misiniz?")
+                if result:
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM Tatil WHERE id = ?", (tatil_id,))
+                    conn.commit()
+                    conn.close()
+                    
+                    clear_tatil_form()
+                    refresh_tatil_list()
+                    messagebox.showinfo("Başarılı", "Tatil silindi!")
+                    
+            except Exception as e:
+                messagebox.showerror("Hata", f"Tatil silinirken hata oluştu: {str(e)}")
+        
+        bottom_btn_frame = ttk.Frame(list_frame)
+        bottom_btn_frame.pack(pady=(10, 0))
+        
+        ttk.Button(bottom_btn_frame, text="Yenile", command=refresh_tatil_list).grid(row=0, column=0, padx=5)
+        ttk.Button(bottom_btn_frame, text="Sil", command=delete_tatil).grid(row=0, column=1, padx=5)
+        
+        load_gun_degerleri()
+        refresh_tatil_list()
+        gun_deger_combo.focus()
+    
+    def create_date_picker(self, parent, date_var, label_text):
+        frame = ttk.Frame(parent)
+        if label_text:
+            ttk.Label(frame, text=label_text).pack(side=tk.LEFT, padx=(0, 5))
+        
+        date_entry = ttk.Entry(frame, textvariable=date_var, width=12)
+        date_entry.pack(side=tk.LEFT, padx=(0, 5))
+        
+        def open_calendar():
+            cal_window = tk.Toplevel(parent)
+            cal_window.title("Tarih Seç")
+            cal_window.geometry("300x250")
+            cal_window.transient(parent.winfo_toplevel())
+            cal_window.grab_set()
+            
+            import calendar
+            from datetime import datetime, date
+            
+            current_date = datetime.now()
+            try:
+                if date_var.get():
+                    current_date = datetime.strptime(date_var.get(), '%d.%m.%Y')
+            except:
+                pass
+            
+            year_var = tk.IntVar(value=current_date.year)
+            month_var = tk.IntVar(value=current_date.month)
+            
+            top_frame = ttk.Frame(cal_window)
+            top_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            ttk.Button(top_frame, text="<", width=3, 
+                      command=lambda: change_month(-1)).pack(side=tk.LEFT)
+            
+            month_label = ttk.Label(top_frame, text="", font=('TkDefaultFont', 12, 'bold'))
+            month_label.pack(side=tk.LEFT, expand=True)
+            
+            ttk.Button(top_frame, text=">", width=3,
+                      command=lambda: change_month(1)).pack(side=tk.RIGHT)
+            
+            cal_frame = ttk.Frame(cal_window)
+            cal_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            
+            def change_month(delta):
+                new_month = month_var.get() + delta
+                new_year = year_var.get()
+                
+                if new_month > 12:
+                    new_month = 1
+                    new_year += 1
+                elif new_month < 1:
+                    new_month = 12
+                    new_year -= 1
+                
+                month_var.set(new_month)
+                year_var.set(new_year)
+                update_calendar()
+            
+            def update_calendar():
+                for widget in cal_frame.winfo_children():
+                    widget.destroy()
+                
+                month_names = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                              'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+                month_label.config(text=f"{month_names[month_var.get()]} {year_var.get()}")
+                
+                days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+                for i, day in enumerate(days):
+                    ttk.Label(cal_frame, text=day, font=('TkDefaultFont', 9, 'bold')).grid(
+                        row=0, column=i, padx=1, pady=1)
+                
+                cal = calendar.monthcalendar(year_var.get(), month_var.get())
+                
+                for week_num, week in enumerate(cal, 1):
+                    for day_num, day in enumerate(week):
+                        if day == 0:
+                            continue
+                        
+                        def select_date(d=day):
+                            selected_date = date(year_var.get(), month_var.get(), d)
+                            date_var.set(selected_date.strftime('%d.%m.%Y'))
+                            cal_window.destroy()
+                        
+                        btn = ttk.Button(cal_frame, text=str(day), width=3,
+                                       command=select_date)
+                        btn.grid(row=week_num, column=day_num, padx=1, pady=1)
+            
+            update_calendar()
+        
+        ttk.Button(frame, text="📅", width=3, command=open_calendar).pack(side=tk.LEFT)
+        
+        return frame
 
 def main():
     root = tk.Tk()
