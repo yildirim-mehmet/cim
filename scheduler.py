@@ -570,35 +570,42 @@ class DutyScheduler:
         
         mandatory_pairs = []
         
-        all_possible_pairs = []
+        mandatory_assignments = []
         
+        thursday_saturday_combinations = []
         for thursday_date, thursday_info, _ in thursdays:
             thursday_week = thursday_date.isocalendar()[1]
             for saturday_date, saturday_info, _ in saturdays:
                 saturday_week = saturday_date.isocalendar()[1]
                 if thursday_week != saturday_week:
-                    all_possible_pairs.append(('thursday_saturday', thursday_date, saturday_date, thursday_info, saturday_info))
+                    thursday_saturday_combinations.append((thursday_date, saturday_date, thursday_info, saturday_info))
         
+        friday_sunday_combinations = []
         for friday_date, friday_info, _ in fridays:
             friday_week = friday_date.isocalendar()[1]
             for sunday_date, sunday_info, _ in sundays:
                 sunday_week = sunday_date.isocalendar()[1]
                 if friday_week != sunday_week:
-                    all_possible_pairs.append(('friday_sunday', friday_date, sunday_date, friday_info, sunday_info))
+                    friday_sunday_combinations.append((friday_date, sunday_date, friday_info, sunday_info))
         
+        sunday_monday_combinations = []
         for sunday_date, sunday_info, _ in sundays:
             sunday_week = sunday_date.isocalendar()[1]
             for monday_date, monday_info, _ in mondays:
                 monday_week = monday_date.isocalendar()[1]
                 if sunday_week != monday_week:
-                    all_possible_pairs.append(('sunday_monday', sunday_date, monday_date, sunday_info, monday_info))
+                    sunday_monday_combinations.append((sunday_date, monday_date, sunday_info, monday_info))
         
-        all_possible_pairs.sort(key=lambda x: (x[1], x[2]))
-        
-        used_dates = set()
-        
-        for pair_type, date1, date2, info1, info2 in all_possible_pairs:
-            if date1 not in used_dates and date2 not in used_dates:
+        def assign_mandatory_pairs(combinations, pair_type):
+            assigned_pairs = []
+            used_dates_local = set()
+            
+            for date1, date2, info1, info2 in combinations:
+                if date1 in used_dates_local or date2 in used_dates_local:
+                    continue
+                if date1 in assigned_dates or date2 in assigned_dates:
+                    continue
+                
                 best_person = None
                 best_priority = float('-inf')
                 
@@ -614,13 +621,20 @@ class DutyScheduler:
                     person_name = next(p[1] for p in personnel if p[0] == best_person)
                     schedule.append((date1, best_person, info1['name']))
                     schedule.append((date2, best_person, info2['name']))
-                    used_dates.add(date1)
-                    used_dates.add(date2)
                     assigned_dates.add(date1)
                     assigned_dates.add(date2)
+                    used_dates_local.add(date1)
+                    used_dates_local.add(date2)
+                    assigned_pairs.append((best_person, date1, date2))
                     
                     stats[best_person]['count'] += 2
                     stats[best_person]['total_value'] += info1['value'] + info2['value']
+            
+            return assigned_pairs
+        
+        thursday_saturday_pairs = assign_mandatory_pairs(thursday_saturday_combinations, 'thursday_saturday')
+        friday_sunday_pairs = assign_mandatory_pairs(friday_sunday_combinations, 'friday_sunday')
+        sunday_monday_pairs = assign_mandatory_pairs(sunday_monday_combinations, 'sunday_monday')
         
         remaining_days = []
         for day in range(1, days_in_month + 1):

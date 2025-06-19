@@ -7,7 +7,7 @@ from database import Database
 from datetime import date
 
 def test_enhanced_pairing_pr14():
-    print("=== TESTING ENHANCED PAIRING PR14 - İKİ AŞAMALI ALGORİTMA ===")
+    print("=== TESTING ENHANCED PAIRING PR14 - OPTIMIZED MANDATORY PAIRING ===")
     
     db = Database()
     scheduler = DutyScheduler(db)
@@ -99,7 +99,7 @@ def test_enhanced_pairing_pr14():
     
     print(f"\n{'✅ SUCCESS' if success else '❌ FAILED'}: Requirements {'met' if success else 'not met'}")
     print(f"Max critical days per person: {max_critical_days} (should be ≤ 3)")
-    print(f"Note: Two-phase algorithm with fair distribution and mandatory pairings")
+    print(f"Note: Optimized mandatory pairing algorithm with enhanced success rates")
     
     return success
 
