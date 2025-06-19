@@ -361,49 +361,12 @@ class DutyScheduler:
     
     def calculate_pairing_bonus(self, person_id, target_date, existing_schedule, year, month):
         """
-        Zorunlu eşleştirme bonusu hesaplama - GELİŞTİRİLMİŞ
-        Perşembe-Cumartesi, Cuma-Pazar ve Pazar-Pazartesi eşleştirmelerini güçlü şekilde teşvik eder
-        Bonus değeri 200 puan ile eşleştirme olasılığını %85-90'a çıkarır
+        Zorunlu eşleştirme bonusu hesaplama - STANDART
+        İki aşamalı algoritma kullanıldığı için bonus sistemi basitleştirildi
         Args: person_id, target_date, existing_schedule, year, month
         Returns: int - Bonus puan değeri
         """
-        target_weekday = target_date.weekday()
-        bonus = 0
-        
-        if target_weekday == 3:
-            has_saturday = any(scheduled_date.weekday() == 5 for scheduled_date, scheduled_person, _ in existing_schedule 
-                             if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_saturday:
-                bonus += 200
-        elif target_weekday == 5:
-            has_thursday = any(scheduled_date.weekday() == 3 for scheduled_date, scheduled_person, _ in existing_schedule 
-                             if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_thursday:
-                bonus += 200
-        
-        if target_weekday == 4:
-            has_sunday = any(scheduled_date.weekday() == 6 for scheduled_date, scheduled_person, _ in existing_schedule 
-                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_sunday:
-                bonus += 200
-        elif target_weekday == 6:
-            has_friday = any(scheduled_date.weekday() == 4 for scheduled_date, scheduled_person, _ in existing_schedule 
-                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_friday:
-                bonus += 200
-        
-        if target_weekday == 6:
-            has_monday = any(scheduled_date.weekday() == 0 for scheduled_date, scheduled_person, _ in existing_schedule 
-                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_monday:
-                bonus += 200
-        elif target_weekday == 0:
-            has_sunday = any(scheduled_date.weekday() == 6 for scheduled_date, scheduled_person, _ in existing_schedule 
-                           if scheduled_person == person_id and scheduled_date.year == year and scheduled_date.month == month)
-            if not has_sunday:
-                bonus += 200
-        
-        return bonus
+        return 0
     
     def has_consecutive_days_conflict(self, person_id, target_date, existing_schedule):
         """
@@ -471,8 +434,8 @@ class DutyScheduler:
     
     def has_same_day_distribution_conflict(self, person_id, target_date, day_type, monthly_stats):
         """
-        Aynı gün türü dağıtım çakışması kontrolü
-        Kritik günlerde (Cuma, Cumartesi, Pazar) aynı kişiye tekrar atama engelleme
+        Kritik gün dağıtım çakışması kontrolü - DENGELI
+        Kritik günlerde adil dağıtım sağlar
         Args: person_id, target_date, day_type, monthly_stats
         Returns: True - Çakışma var, False - Çakışma yok
         """
@@ -483,12 +446,9 @@ class DutyScheduler:
         
         critical_days = ['Cuma', 'Cumartesi', 'Pazar']
         if day_type in critical_days:
-            for critical_day in critical_days:
-                if critical_day in person_monthly and person_monthly[critical_day] > 0:
-                    return True
-        
-        if day_type in person_monthly and person_monthly[day_type] > 0:
-            return True
+            critical_count = sum(person_monthly.get(cd, 0) for cd in critical_days)
+            if critical_count >= 3:
+                return True
         
         return False
     
@@ -550,15 +510,9 @@ class DutyScheduler:
     
     def generate_schedule(self, year, month):
         """
-        Ana nöbet programı oluşturma algoritması
-        Tüm kısıtlamaları ve öncelikleri dikkate alarak aylık program oluşturur
-        
-        Algoritma sırası:
-        1. Temel verileri topla (personel, gün değerleri, tatiller, mazeretler)
-        2. Her gün için uygun personeli belirle
-        3. Kısıtlamaları kontrol et (mazeret, ardışık gün, eşleştirmeler)
-        4. Öncelik puanı hesapla (adil dağıtım + eşleştirme bonusu)
-        5. En yüksek puanlı personeli seç
+        İki aşamalı nöbet programı oluşturma algoritması
+        1. Aşama: Zorunlu eşleştirmeleri öncelikle yerleştir
+        2. Aşama: Kalan günleri adil dağıtımla doldur
         
         Args: year, month - Hedef yıl ve ay
         Returns: [(tarih, personel_id, gün_türü), ...] - Nöbet programı
@@ -585,7 +539,9 @@ class DutyScheduler:
             exemption_dict[e[0]][date.fromisoformat(e[1])] = e[2]
         
         days_in_month = calendar.monthrange(year, month)[1]
-        schedule = []
+        
+        critical_days = []
+        regular_days = []
         
         for day in range(1, days_in_month + 1):
             current_date = date(year, month, day)
@@ -598,48 +554,115 @@ class DutyScheduler:
             
             day_info = day_values[day_value_id]
             
+            if weekday in [0, 3, 4, 5, 6]:
+                critical_days.append((current_date, day_info, weekday))
+            else:
+                regular_days.append((current_date, day_info, weekday))
+        
+        schedule = []
+        assigned_dates = set()
+        
+        thursdays = [(d, info, wd) for d, info, wd in critical_days if wd == 3]
+        fridays = [(d, info, wd) for d, info, wd in critical_days if wd == 4]
+        saturdays = [(d, info, wd) for d, info, wd in critical_days if wd == 5]
+        sundays = [(d, info, wd) for d, info, wd in critical_days if wd == 6]
+        mondays = [(d, info, wd) for d, info, wd in critical_days if wd == 0]
+        
+        mandatory_pairs = []
+        
+        all_possible_pairs = []
+        
+        for thursday_date, thursday_info, _ in thursdays:
+            thursday_week = thursday_date.isocalendar()[1]
+            for saturday_date, saturday_info, _ in saturdays:
+                saturday_week = saturday_date.isocalendar()[1]
+                if thursday_week != saturday_week:
+                    all_possible_pairs.append(('thursday_saturday', thursday_date, saturday_date, thursday_info, saturday_info))
+        
+        for friday_date, friday_info, _ in fridays:
+            friday_week = friday_date.isocalendar()[1]
+            for sunday_date, sunday_info, _ in sundays:
+                sunday_week = sunday_date.isocalendar()[1]
+                if friday_week != sunday_week:
+                    all_possible_pairs.append(('friday_sunday', friday_date, sunday_date, friday_info, sunday_info))
+        
+        for sunday_date, sunday_info, _ in sundays:
+            sunday_week = sunday_date.isocalendar()[1]
+            for monday_date, monday_info, _ in mondays:
+                monday_week = monday_date.isocalendar()[1]
+                if sunday_week != monday_week:
+                    all_possible_pairs.append(('sunday_monday', sunday_date, monday_date, sunday_info, monday_info))
+        
+        all_possible_pairs.sort(key=lambda x: (x[1], x[2]))
+        
+        used_dates = set()
+        
+        for pair_type, date1, date2, info1, info2 in all_possible_pairs:
+            if date1 not in used_dates and date2 not in used_dates:
+                best_person = None
+                best_priority = float('-inf')
+                
+                for person_id in personnel_ids:
+                    if (self._can_assign_person(person_id, date1, schedule, exemption_dict, last_month_duty_person, year, month) and
+                        self._can_assign_person(person_id, date2, schedule, exemption_dict, last_month_duty_person, year, month)):
+                        priority = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                        if priority > best_priority:
+                            best_priority = priority
+                            best_person = person_id
+                
+                if best_person:
+                    person_name = next(p[1] for p in personnel if p[0] == best_person)
+                    schedule.append((date1, best_person, info1['name']))
+                    schedule.append((date2, best_person, info2['name']))
+                    used_dates.add(date1)
+                    used_dates.add(date2)
+                    assigned_dates.add(date1)
+                    assigned_dates.add(date2)
+                    
+                    stats[best_person]['count'] += 2
+                    stats[best_person]['total_value'] += info1['value'] + info2['value']
+        
+        remaining_days = []
+        for day in range(1, days_in_month + 1):
+            current_date = date(year, month, day)
+            if current_date not in assigned_dates:
+                weekday = current_date.weekday()
+                
+                if current_date in holiday_dict:
+                    day_value_id = holiday_dict[current_date]
+                else:
+                    day_value_id = self.get_weekday_id(weekday)
+                
+                day_info = day_values[day_value_id]
+                remaining_days.append((current_date, day_info))
+        
+        for current_date, day_info in remaining_days:
             eligible_personnel = []
             for person_id in personnel_ids:
                 is_forced_assignment = (person_id in exemption_dict and 
                                       current_date in exemption_dict[person_id] and 
                                       exemption_dict[person_id][current_date] == 1)
                 
-                if day == 1 and person_id == last_month_duty_person:
-                    if not is_forced_assignment:  # Zorunlu atama hariç
+                if current_date.day == 1 and person_id == last_month_duty_person:
+                    if not is_forced_assignment:
                         continue
                 
                 if person_id in exemption_dict and current_date in exemption_dict[person_id]:
                     tut_value = exemption_dict[person_id][current_date]
-                    if tut_value == 0:  # tut=0 kesinlikle hariç tut
+                    if tut_value == 0:
                         continue
                 
                 if not is_forced_assignment:
                     if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
                         continue
                     
-                    if self.needs_thursday_saturday_pairing(person_id, current_date, schedule, year, month):
-                        continue
-                    
-                    if self.needs_friday_sunday_pairing(person_id, current_date, schedule, year, month):
-                        continue
-                    
-                    if self.needs_sunday_monday_pairing(person_id, current_date, schedule, year, month):
-                        continue
-                    
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
-                        continue
-                    
-                    current_monthly_stats = self.get_current_schedule_monthly_stats(schedule, monthly_stats)
-                    if self.has_same_day_distribution_conflict(person_id, current_date, day_info['name'], current_monthly_stats):
                         continue
                 
                 priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
                 
-                pairing_bonus = self.calculate_pairing_bonus(person_id, current_date, schedule, year, month)
-                priority_score += pairing_bonus
-                
                 if is_forced_assignment:
-                    priority_score += 1000  # Mazeret tut=1 mutlak öncelik
+                    priority_score += 1000
                 
                 eligible_personnel.append((person_id, priority_score))
             
@@ -652,15 +675,10 @@ class DutyScheduler:
                 
                 stats[selected_person_id]['count'] += 1
                 stats[selected_person_id]['total_value'] += day_info['value']
-                
-                if selected_person_id not in monthly_stats:
-                    monthly_stats[selected_person_id] = {}
-                if day_info['name'] not in monthly_stats[selected_person_id]:
-                    monthly_stats[selected_person_id][day_info['name']] = 0
-                monthly_stats[selected_person_id][day_info['name']] += 1
             else:
                 schedule.append((current_date, None, day_info['name']))
         
+        schedule.sort(key=lambda x: x[0])
         return schedule
     
     def save_schedule(self, schedule, year, month):
@@ -691,6 +709,34 @@ class DutyScheduler:
         
         conn.commit()
         conn.close()
+    
+    def _can_assign_person(self, person_id, target_date, existing_schedule, exemption_dict, last_month_duty_person, year, month):
+        """
+        Kişinin belirli bir tarihe atanıp atanamayacağını kontrol eder
+        Args: person_id, target_date, existing_schedule, exemption_dict, last_month_duty_person, year, month
+        Returns: True - Atanabilir, False - Atanamaz
+        """
+        is_forced_assignment = (person_id in exemption_dict and 
+                              target_date in exemption_dict[person_id] and 
+                              exemption_dict[person_id][target_date] == 1)
+        
+        if target_date.day == 1 and person_id == last_month_duty_person:
+            if not is_forced_assignment:
+                return False
+        
+        if person_id in exemption_dict and target_date in exemption_dict[person_id]:
+            tut_value = exemption_dict[person_id][target_date]
+            if tut_value == 0:
+                return False
+        
+        if not is_forced_assignment:
+            if self.is_ramazan_kurban_conflict(person_id, target_date, existing_schedule):
+                return False
+            
+            if self.has_consecutive_days_conflict(person_id, target_date, existing_schedule):
+                return False
+        
+        return True
     
     def get_person_name(self, person_id):
         """

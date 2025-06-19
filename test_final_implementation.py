@@ -6,8 +6,8 @@ from scheduler import DutyScheduler
 from database import Database
 from datetime import date
 
-def test_enhanced_pairing_pr14():
-    print("=== TESTING ENHANCED PAIRING PR14 - İKİ AŞAMALI ALGORİTMA ===")
+def test_final_implementation():
+    print("=== TESTING FINAL IMPLEMENTATION - BALANCED MANDATORY PAIRINGS ===")
     
     db = Database()
     scheduler = DutyScheduler(db)
@@ -84,6 +84,17 @@ def test_enhanced_pairing_pr14():
     for person_id, count in critical_assignments.items():
         print(f"Person {person_id}: {count} critical day assignments")
     
+    all_assignments = {}
+    for date_obj, person_id, day_type in schedule:
+        if person_id:
+            if person_id not in all_assignments:
+                all_assignments[person_id] = 0
+            all_assignments[person_id] += 1
+    
+    print(f"\nTOTAL DUTY DISTRIBUTION:")
+    for person_id, count in all_assignments.items():
+        print(f"Person {person_id}: {count} total duties")
+    
     thursday_saturday_rate = (thursday_saturday_pairs / max(len(thursdays), 1)) * 100
     friday_sunday_rate = (friday_sunday_pairs / max(len(fridays), 1)) * 100
     sunday_monday_rate = (sunday_monday_pairs / max(len(sundays), 1)) * 100
@@ -94,14 +105,18 @@ def test_enhanced_pairing_pr14():
     print(f"Sunday-Monday pairings: {sunday_monday_pairs}/{len(sundays)} = {sunday_monday_rate:.1f}%")
     
     max_critical_days = max(critical_assignments.values()) if critical_assignments else 0
+    max_total_duties = max(all_assignments.values()) if all_assignments else 0
+    min_total_duties = min(all_assignments.values()) if all_assignments else 0
+    
     success = (thursday_saturday_rate >= 85 and friday_sunday_rate >= 85 and 
-               sunday_monday_rate >= 85 and max_critical_days <= 3)
+               sunday_monday_rate >= 85 and max_critical_days <= 3 and 
+               (max_total_duties - min_total_duties) <= 2)
     
     print(f"\n{'✅ SUCCESS' if success else '❌ FAILED'}: Requirements {'met' if success else 'not met'}")
     print(f"Max critical days per person: {max_critical_days} (should be ≤ 3)")
-    print(f"Note: Two-phase algorithm with fair distribution and mandatory pairings")
+    print(f"Duty distribution fairness: {min_total_duties}-{max_total_duties} (difference should be ≤ 2)")
     
     return success
 
 if __name__ == "__main__":
-    test_enhanced_pairing_pr14()
+    test_final_implementation()
