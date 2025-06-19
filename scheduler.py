@@ -241,20 +241,26 @@ class DutyScheduler:
         mandatory_pairs = []
         
         # Perşembe-Cumartesi eşleştirmeleri (farklı haftalarda)
+        used_saturdays = set()
         for thursday_date, thursday_info in thursdays:
             for saturday_date, saturday_info in saturdays:
-                if self.get_week_start(thursday_date) != self.get_week_start(saturday_date):
+                if (saturday_date not in used_saturdays and 
+                    self.get_week_start(thursday_date) != self.get_week_start(saturday_date)):
                     mandatory_pairs.append((thursday_date, thursday_info, saturday_date, saturday_info, 'Perşembe-Cumartesi'))
+                    used_saturdays.add(saturday_date)
                     break
         
         # Cuma-Pazar eşleştirmeleri (farklı haftalarda)
         fridays = [(d, info) for d, info, wd in all_days if wd == 4 and d not in assigned_dates]
         sundays = [(d, info) for d, info, wd in all_days if wd == 6 and d not in assigned_dates]
         
+        used_sundays = set()
         for friday_date, friday_info in fridays:
             for sunday_date, sunday_info in sundays:
-                if self.get_week_start(friday_date) != self.get_week_start(sunday_date):
+                if (sunday_date not in used_sundays and 
+                    self.get_week_start(friday_date) != self.get_week_start(sunday_date)):
                     mandatory_pairs.append((friday_date, friday_info, sunday_date, sunday_info, 'Cuma-Pazar'))
+                    used_sundays.add(sunday_date)
                     break
         
         for day1_date, day1_info, day2_date, day2_info, pair_type in mandatory_pairs:
@@ -313,6 +319,7 @@ class DutyScheduler:
                 selected_person_id = eligible_personnel[0][0]
                 
                 schedule.append((current_date, selected_person_id, day_info['name']))
+                assigned_dates.add(current_date)  # KRITIK FIX: Tarihi atanmış olarak işaretle
                 
                 # Kritik günlerde atananları kaydet
                 if weekday in [4, 5, 6]:
@@ -323,6 +330,7 @@ class DutyScheduler:
                 stats[selected_person_id]['total_value'] += day_info['value']
             else:
                 schedule.append((current_date, None, day_info['name']))
+                assigned_dates.add(current_date)  # Boş günü de işaretle
         
         schedule.sort(key=lambda x: x[0])
         return schedule
