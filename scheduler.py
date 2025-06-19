@@ -246,7 +246,6 @@ class DutyScheduler:
                 if self.has_month_boundary_consecutive_conflict(person_id, current_date):
                     continue
                 
-                # Gelişmiş öncelik puanı hesaplama
                 priority_score = self.calculate_priority_score(
                     person_id, stats, avg_count, avg_value, current_date, 
                     schedule, day_type, monthly_stats, personnel_ids
@@ -254,8 +253,23 @@ class DutyScheduler:
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
-                eligible_personnel.sort(key=lambda x: x[1], reverse=True)
-                selected_person_id = eligible_personnel[0][0]
+                mandatory_pairing_candidates = []
+                regular_candidates = []
+                
+                for person_id, score in eligible_personnel:
+                    pairing_bonus = self.calculate_pairing_bonus(person_id, current_date, schedule)
+                    
+                    if pairing_bonus > 0:
+                        mandatory_pairing_candidates.append((person_id, score + pairing_bonus + 2000))
+                    else:
+                        regular_candidates.append((person_id, score))
+                
+                if mandatory_pairing_candidates:
+                    mandatory_pairing_candidates.sort(key=lambda x: x[1], reverse=True)
+                    selected_person_id = mandatory_pairing_candidates[0][0]
+                else:
+                    regular_candidates.sort(key=lambda x: x[1], reverse=True)
+                    selected_person_id = regular_candidates[0][0]
                 
                 person_name = next(p[1] for p in personnel if p[0] == selected_person_id)
                 schedule.append((current_date, selected_person_id, day_info['name']))
@@ -328,8 +342,9 @@ class DutyScheduler:
     
     def needs_thursday_saturday_pairing(self, person_id, target_date, existing_schedule):
         """
-        Perşembe-Cumartesi zorunlu eşleştirme kontrolü
-        Eğer kişinin o ay Perşembe nöbeti varsa, farklı haftada Cumartesi zorunludur
+        Perşembe-Cumartesi zorunlu eşleştirme kontrolü - DÜZELTME
+        1-Cumartesi yazılmışsa Perşembe yazılmalı
+        2-Perşembe yazılmışsa Cumartesi yazılmalı
         """
         target_week = self.get_week_start(target_date)
         
@@ -342,19 +357,35 @@ class DutyScheduler:
                     return True
         
         if target_date.weekday() == 3:
+            has_saturday_in_different_week = False
             for scheduled_date, scheduled_person, _ in existing_schedule:
                 if (scheduled_person == person_id and 
                     scheduled_date.weekday() == 5 and
                     scheduled_date.month == target_date.month and
                     self.get_week_start(scheduled_date) != target_week):
+                    has_saturday_in_different_week = True
+                    break
+            
+            if not has_saturday_in_different_week:
+                saturdays_in_month = []
+                for day in range(1, 32):
+                    try:
+                        test_date = date(target_date.year, target_date.month, day)
+                        if test_date.weekday() == 5 and self.get_week_start(test_date) != target_week:
+                            saturdays_in_month.append(test_date)
+                    except ValueError:
+                        break
+                
+                if saturdays_in_month:
                     return True
         
         return False
     
     def needs_friday_sunday_pairing(self, person_id, target_date, existing_schedule):
         """
-        Cuma-Pazar zorunlu eşleştirme kontrolü
-        Eğer kişinin o ay Cuma nöbeti varsa, farklı haftada Pazar zorunludur
+        Cuma-Pazar zorunlu eşleştirme kontrolü - DÜZELTME
+        3-Pazar yazılmışsa Cuma yazılmalı
+        4-Cuma yazılmışsa Pazar yazılmalı
         """
         target_week = self.get_week_start(target_date)
         
@@ -367,39 +398,95 @@ class DutyScheduler:
                     return True
         
         if target_date.weekday() == 4:
+            has_sunday_in_different_week = False
             for scheduled_date, scheduled_person, _ in existing_schedule:
                 if (scheduled_person == person_id and 
                     scheduled_date.weekday() == 6 and
                     scheduled_date.month == target_date.month and
                     self.get_week_start(scheduled_date) != target_week):
+                    has_sunday_in_different_week = True
+                    break
+            
+            if not has_sunday_in_different_week:
+                sundays_in_month = []
+                for day in range(1, 32):
+                    try:
+                        test_date = date(target_date.year, target_date.month, day)
+                        if test_date.weekday() == 6 and self.get_week_start(test_date) != target_week:
+                            sundays_in_month.append(test_date)
+                    except ValueError:
+                        break
+                
+                if sundays_in_month:
                     return True
         
         return False
     
     def calculate_pairing_bonus(self, person_id, target_date, existing_schedule):
         """
-        Zorunlu eşleştirme bonusu hesapla
-        Eşleştirme gerekiyorsa yüksek bonus ver (200 puan)
+        Zorunlu eşleştirme bonusu hesaplama - GELİŞTİRİLMİŞ
+        1-Cumartesi yazılmışsa Perşembe yazılmalı
+        2-Perşembe yazılmışsa Cumartesi yazılmalı  
+        3-Pazar yazılmışsa Cuma yazılmalı
+        4-Cuma yazılmışsa Pazar yazılmalı
         """
         bonus = 0
+        weekday = target_date.weekday()
+        target_week = self.get_week_start(target_date)
         
-        if self.needs_thursday_saturday_pairing(person_id, target_date, existing_schedule):
-            bonus += 200  # Yüksek öncelik - zorunlu eşleştirme
+        if weekday == 5:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 3 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    bonus += 1000
+                    break
         
-        if self.needs_friday_sunday_pairing(person_id, target_date, existing_schedule):
-            bonus += 200  # Yüksek öncelik - zorunlu eşleştirme
+        elif weekday == 3:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 5 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    bonus += 1000
+                    break
+        
+        elif weekday == 6:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 4 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    bonus += 1000
+                    break
+        
+        elif weekday == 4:
+            for scheduled_date, scheduled_person, _ in existing_schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.weekday() == 6 and
+                    scheduled_date.month == target_date.month and
+                    self.get_week_start(scheduled_date) != target_week):
+                    bonus += 1000
+                    break
         
         return bonus
     
     def has_same_day_distribution_conflict(self, person_id, target_date, day_type, monthly_stats):
         """
-        Aynı gün türü dağıtım çakışması kontrolü
-        Bir kişi o ay aynı gün türünde zaten nöbet tuttuysa, mümkünse başkasına ver
+        Aynı gün türü dağıtım çakışması kontrolü - GELİŞTİRİLMİŞ
+        Kritik günlerde (Cuma, Cumartesi, Pazar) aynı kişiye tekrar atama engelleme
         """
         if person_id not in monthly_stats:
             return False
         
         person_monthly = monthly_stats[person_id]
+        
+        critical_days = ['Cuma', 'Cumartesi', 'Pazar']
+        if day_type in critical_days:
+            for critical_day in critical_days:
+                if critical_day in person_monthly and person_monthly[critical_day] > 0:
+                    return True
         
         if day_type in person_monthly and person_monthly[day_type] > 0:
             return True
