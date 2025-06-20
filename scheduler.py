@@ -338,7 +338,8 @@ class DutyScheduler:
             
             eligible_personnel = []
             for person_id in personnel_ids:
-                current_monthly_count = self.get_current_monthly_count(person_id, [(d[0], reserved_assignments.get(d[0], (None, None, None))[1], d[1]) for d in all_days if d[0] in reserved_assignments], year, month)
+                current_schedule_list = [(d[0], reserved_assignments.get(d[0], (None, None, None))[1], d[1]) for d in all_days if d[0] in reserved_assignments]
+                current_monthly_count = self.get_current_monthly_count(person_id, current_schedule_list, year, month)
                 
                 if current_monthly_count >= max_duties:
                     continue
