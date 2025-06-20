@@ -26,6 +26,9 @@ class DutySchedulerGUI:
         self.selected_month = datetime.now().month
         self.day_cells = {}
         
+        self.min_nob_var = None
+        self.max_nob_var = None
+        
         self.setup_ui()
         self.load_initial_data()
     
@@ -55,10 +58,20 @@ class DutySchedulerGUI:
         month_combo.grid(row=0, column=3, padx=(0, 20))
         month_combo.bind('<<ComboboxSelected>>', self.on_date_change)
         
-        ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=4, padx=(0, 10))
-        ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=5, padx=(0, 10))
-        ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
-        ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
+        ttk.Label(control_frame, text="Min Nöbet:").grid(row=0, column=4, padx=(0, 5))
+        self.min_nob_var = tk.StringVar(value="0")
+        min_nob_entry = ttk.Entry(control_frame, textvariable=self.min_nob_var, width=5)
+        min_nob_entry.grid(row=0, column=5, padx=(0, 10))
+        
+        ttk.Label(control_frame, text="Max Nöbet:").grid(row=0, column=6, padx=(0, 5))
+        self.max_nob_var = tk.StringVar(value="10")
+        max_nob_entry = ttk.Entry(control_frame, textvariable=self.max_nob_var, width=5)
+        max_nob_entry.grid(row=0, column=7, padx=(0, 20))
+        
+        ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=8, padx=(0, 10))
+        ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=9, padx=(0, 10))
+        ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=10, padx=(0, 10))
+        ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=11, padx=(0, 10))
         ttk.Button(control_frame, text="Mazeret Girişi", command=self.open_mazeret_window).grid(row=1, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         ttk.Button(control_frame, text="Eski Nöbetler", command=self.open_old_duties_window).grid(row=1, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
         ttk.Button(control_frame, text="Gün Değerleri", command=self.open_gun_deger_window).grid(row=2, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
@@ -376,7 +389,25 @@ class DutySchedulerGUI:
     
     def generate_schedule(self):
         try:
-            self.current_schedule = self.scheduler.generate_schedule(self.selected_year, self.selected_month)
+            try:
+                min_nob = int(self.min_nob_var.get())
+                max_nob = int(self.max_nob_var.get())
+                
+                if min_nob < 0:
+                    messagebox.showerror("Hata", "Minimum nöbet sayısı 0'dan küçük olamaz!")
+                    return
+                if max_nob < min_nob:
+                    messagebox.showerror("Hata", "Maximum nöbet sayısı minimum nöbet sayısından küçük olamaz!")
+                    return
+                if max_nob > 31:
+                    messagebox.showerror("Hata", "Maximum nöbet sayısı 31'den büyük olamaz!")
+                    return
+                    
+            except ValueError:
+                messagebox.showerror("Hata", "Min/Max nöbet değerleri geçerli sayılar olmalıdır!")
+                return
+            
+            self.current_schedule = self.scheduler.generate_schedule(self.selected_year, self.selected_month, min_nob, max_nob)
             
             for cell in self.day_cells.values():
                 cell.destroy()

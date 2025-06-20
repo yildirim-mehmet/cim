@@ -95,12 +95,18 @@ class DutyScheduler:
         weekday_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7}
         return weekday_mapping.get(weekday, 1)
     
-    def calculate_priority_score(self, person_id, stats, avg_count, avg_value):
-        """Adil dağıtım için öncelik puanı hesaplama"""
+    def calculate_priority_score(self, person_id, stats, avg_count, avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
+        """Adil dağıtım için öncelik puanı hesaplama - min/max kısıtları dahil"""
         person_stats = stats[person_id]
         count_diff = avg_count - person_stats['count']
         value_diff = avg_value - person_stats['total_value']
-        return count_diff * 2 + value_diff
+        
+        base_score = count_diff * 2 + value_diff
+        
+        if current_monthly_count < min_duties:
+            base_score += 100
+            
+        return base_score
     
     def is_person_eligible_for_pairing(self, person_id, current_date, day_name, 
                                      exemption_dict, last_month_duty_person, reserved_assignments):
@@ -132,10 +138,12 @@ class DutyScheduler:
         
         return False
     
-    def generate_schedule_with_global_optimization(self, year, month):
+    def generate_schedule_with_global_optimization(self, year, month, min_duties=0, max_duties=10):
         """
         GLOBAL EŞLEŞTİRME OPTİMİZASYONU - TÜM ÇIFTLER BİRLİKTE
         Tüm zorunlu eşleştirmeleri aynı anda değerlendirerek ≥85% başarı oranı hedefler
+        min_duties: Kişi başına minimum nöbet sayısı
+        max_duties: Kişi başına maksimum nöbet sayısı
         """
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
@@ -211,7 +219,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'thursday_saturday',
                             'priority': priority_score + 2000,  # En yüksek öncelik
@@ -245,7 +253,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'friday_sunday',
                             'priority': priority_score + 1500,  # Yüksek öncelik
@@ -279,7 +287,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'sunday_monday',
                             'priority': priority_score + 1000,  # Orta öncelik
@@ -330,6 +338,11 @@ class DutyScheduler:
             
             eligible_personnel = []
             for person_id in personnel_ids:
+                current_monthly_count = self.get_current_monthly_count(person_id, [(d[0], reserved_assignments.get(d[0], (None, None, None))[1], d[1]) for d in all_days if d[0] in reserved_assignments], year, month)
+                
+                if current_monthly_count >= max_duties:
+                    continue
+                    
                 if person_critical_count[person_id] >= 3:
                     continue
                 
@@ -351,7 +364,7 @@ class DutyScheduler:
                 if week_conflict:
                     continue
                 
-                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_monthly_count, min_duties, max_duties)
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
@@ -372,6 +385,11 @@ class DutyScheduler:
             else:
                 eligible_personnel = []
                 for person_id in personnel_ids:
+                    current_monthly_count = self.get_current_monthly_count(person_id, schedule, year, month)
+                    
+                    if current_monthly_count >= max_duties:
+                        continue
+                    
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 0):
                         continue
@@ -384,7 +402,7 @@ class DutyScheduler:
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                         continue
                     
-                    priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                    priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_monthly_count, min_duties, max_duties)
                     
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 1):
@@ -405,9 +423,9 @@ class DutyScheduler:
         
         return schedule
     
-    def generate_schedule(self, year, month):
+    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
         """Ana nöbet programı oluşturma metodu"""
-        return self.generate_schedule_with_global_optimization(year, month)
+        return self.generate_schedule_with_global_optimization(year, month, min_duties, max_duties)
     
     def save_schedule(self, schedule, year, month):
         """Oluşturulan nöbet programını veritabanına kaydet"""
@@ -486,3 +504,10 @@ class DutyScheduler:
             output.append(f"{personnel_names[person_id].ljust(20)}: {count} nöbet")
         
         return "\n".join(output)
+    
+    def get_current_monthly_count(self, person_id, schedule, year, month):
+        """Mevcut programdaki kişinin aylık nöbet sayısını hesaplar"""
+        return sum(1 for scheduled_date, scheduled_person, _ in schedule 
+                  if scheduled_person == person_id and 
+                     scheduled_date.year == year and 
+                     scheduled_date.month == month)
