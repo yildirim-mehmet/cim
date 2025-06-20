@@ -224,6 +224,21 @@ class DutyScheduler:
         elif day_type_count == 1:
             base_score -= 2
         
+
+        base_score = count_diff * 10 + value_diff * 0.1
+        
+        if person_stats['count'] < min_nob:
+            base_score += 1000
+        
+        if person_stats['count'] >= total_avg_count + 1:
+            base_score -= 500
+        
+        day_type_count = self.get_day_type_count(person_id, target_date, existing_schedule)
+        if day_type_count == 0:
+            base_score += 5
+        elif day_type_count == 1:
+            base_score -= 2
+        
         return base_score
     
     def generate_schedule(self, year, month, min_nob=0, max_nob=10):
@@ -267,6 +282,10 @@ class DutyScheduler:
             
             if day_value_id not in day_values:
                 day_value_id = 1
+
+            
+            day_info = day_values[day_value_id]
+
             
 
             day_info = day_values[day_value_id]
@@ -317,6 +336,9 @@ class DutyScheduler:
                 if stats[person_id]['count'] >= max_nob:
                     continue
                 
+                if stats[person_id]['count'] >= max_nob:
+                    continue
+                
                 if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
                     continue
                 
@@ -333,6 +355,11 @@ class DutyScheduler:
                 if self.has_day_type_limit_conflict(person_id, current_date, schedule):
                     continue
                 
+
+                if self.has_day_type_limit_conflict(person_id, current_date, schedule):
+                    continue
+                
+
                 priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_date, schedule, min_nob, max_nob)
                 eligible_personnel.append((person_id, priority_score))
             
