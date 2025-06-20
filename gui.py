@@ -26,6 +26,9 @@ class DutySchedulerGUI:
         self.selected_month = datetime.now().month
         self.day_cells = {}
         
+        self.min_nob_var = None
+        self.max_nob_var = None
+        
         self.setup_ui()
         self.load_initial_data()
     
@@ -55,15 +58,21 @@ class DutySchedulerGUI:
         month_combo.grid(row=0, column=3, padx=(0, 20))
         month_combo.bind('<<ComboboxSelected>>', self.on_date_change)
         
-        ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=4, padx=(0, 10))
-        ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=5, padx=(0, 10))
-        ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=6, padx=(0, 10))
-        ttk.Button(control_frame, text="Personel Ekle", command=self.open_personnel_window).grid(row=0, column=7, padx=(0, 10))
-        ttk.Button(control_frame, text="Mazeret Girişi", command=self.open_mazeret_window).grid(row=1, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="Eski Nöbetler", command=self.open_old_duties_window).grid(row=1, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="Gün Değerleri", command=self.open_gun_deger_window).grid(row=2, column=0, columnspan=2, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="Tatil Yönetimi", command=self.open_tatil_window).grid(row=2, column=2, columnspan=2, pady=5, sticky=(tk.W, tk.E))
-        ttk.Button(control_frame, text="Bilgi", command=self.open_info_window).grid(row=2, column=4, columnspan=2, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(control_frame, text="Min Nöbet:").grid(row=0, column=4, padx=(0, 5))
+        self.min_nob_var = tk.StringVar(value="0")
+        min_nob_entry = ttk.Entry(control_frame, textvariable=self.min_nob_var, width=5)
+        min_nob_entry.grid(row=0, column=5, padx=(0, 10))
+        
+        ttk.Label(control_frame, text="Max Nöbet:").grid(row=0, column=6, padx=(0, 5))
+        self.max_nob_var = tk.StringVar(value="10")
+        max_nob_entry = ttk.Entry(control_frame, textvariable=self.max_nob_var, width=5)
+        max_nob_entry.grid(row=0, column=7, padx=(0, 20))
+        
+        ttk.Button(control_frame, text="Nöbet Hazırla", command=self.generate_schedule).grid(row=0, column=8, padx=(0, 10))
+        ttk.Button(control_frame, text="Excel'e Aktar", command=self.export_to_excel).grid(row=0, column=9, padx=(0, 10))
+        ttk.Button(control_frame, text="Kaydet", command=self.save_schedule).grid(row=0, column=10, padx=(0, 10))
+
         
         info_frame = ttk.LabelFrame(main_frame, text="Personel Bilgileri", padding="10")
         info_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -376,7 +385,22 @@ class DutySchedulerGUI:
     
     def generate_schedule(self):
         try:
-            self.current_schedule = self.scheduler.generate_schedule(self.selected_year, self.selected_month)
+            try:
+                min_nob = int(self.min_nob_var.get()) if self.min_nob_var.get() else 0
+                max_nob = int(self.max_nob_var.get()) if self.max_nob_var.get() else 10
+                
+                if min_nob < 0:
+                    messagebox.showerror("Hata", "Min nöbet sayısı negatif olamaz!")
+                    return
+                if max_nob < min_nob:
+                    messagebox.showerror("Hata", "Max nöbet sayısı min nöbet sayısından küçük olamaz!")
+                    return
+                    
+            except ValueError:
+                messagebox.showerror("Hata", "Min/Max nöbet değerleri geçerli sayılar olmalıdır!")
+                return
+            
+            self.current_schedule = self.scheduler.generate_schedule(self.selected_year, self.selected_month, min_nob, max_nob)
             
             for cell in self.day_cells.values():
                 cell.destroy()
@@ -396,7 +420,27 @@ class DutySchedulerGUI:
                     'value': 0
                 }
             
-            self.populate_calendar(schedule_dict)
+
+            schedule_display = self.scheduler.display_schedule(self.current_schedule, self.selected_year, self.selected_month)
+            
+            popup = tk.Toplevel(self.root)
+            popup.title(f"{self.selected_year}/{self.selected_month} Nöbet Detayları")
+            popup.geometry("800x600")
+            
+            text_frame = ttk.Frame(popup)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("Courier", 10))
+            scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            text_widget.insert(tk.END, f"Nöbetler başarıyla hazırlandı!\n\n{schedule_display}")
+            text_widget.config(state=tk.DISABLED)
+            
+
             messagebox.showinfo("Başarılı", f"{self.selected_year}/{self.selected_month} ayı için nöbet programı hazırlandı!")
             
         except Exception as e:

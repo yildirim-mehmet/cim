@@ -179,32 +179,22 @@ class DutyScheduler:
         
         return False
     
-    def has_weekly_limit(self, person_id: int, target_date: date, 
-                        schedule: List[Tuple[date, int, str]]) -> bool:
-        week_start = target_date - timedelta(days=target_date.weekday())
-        week_end = week_start + timedelta(days=6)
+    def get_day_type_count(self, person_id, target_date, existing_schedule):
+        target_day_name = calendar.day_name[target_date.weekday()]
+        day_type_count = 0
         
-        for scheduled_date, scheduled_person, _ in schedule:
-            if scheduled_person == person_id and week_start <= scheduled_date <= week_end:
-                return True
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id:
+                if calendar.day_name[scheduled_date.weekday()] == target_day_name:
+                    day_type_count += 1
         
-        return False
+        return day_type_count
     
-    def should_avoid_day_type(self, person_id: int, target_weekday: int, 
-                            schedule: List[Tuple[date, int, str]], year: int, month: int) -> bool:
-        if target_weekday not in self.day_avoidance_rates:
-            return False
-        
-        for scheduled_date, scheduled_person, _ in schedule:
-            if (scheduled_person == person_id and scheduled_date.year == year and 
-                scheduled_date.month == month and scheduled_date.weekday() == target_weekday):
-                return random.random() < self.day_avoidance_rates[target_weekday]
-        
-        return False
+    def has_day_type_limit_conflict(self, person_id, target_date, existing_schedule, max_same_day_type=2):
+        return self.get_day_type_count(person_id, target_date, existing_schedule) >= max_same_day_type
     
-    def calculate_fairness_adjustment(self, person_id: int, stats: Dict[int, Dict[str, float]], 
-                                    avg_count: float, avg_value: float) -> float:
-        """Nöbet sayısı ve puan eşitliği için ayar faktörü hesaplar"""
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, target_date, existing_schedule, min_nob=0, max_nob=10):
+
         person_stats = stats[person_id]
         count_diff = avg_count - person_stats['count']
         value_diff = avg_value - person_stats['total_value']
@@ -231,102 +221,22 @@ class DutyScheduler:
             if not has_pair:
                 bonus += 200  # Güçlü eşleştirme bonusu
         
-        return bonus
-    
-    def calculate_priority_score(self, person_id: int, stats: Dict[int, Dict[str, float]], 
-                               avg_count: float, avg_value: float, 
-                               target_date: date, schedule: List[Tuple[date, int, str]], 
-                               year: int, month: int) -> float:
-        base_score = self.calculate_fairness_adjustment(person_id, stats, avg_count, avg_value)
+
+        base_score = count_diff * 2 + value_diff
         
-        target_weekday = target_date.weekday()
+        if person_stats['count'] < min_nob:
+            base_score += 100
         
-        # Eşleştirme bonusu
-        pairing_bonus = self.calculate_pairing_bonus(person_id, target_date, schedule, year, month)
-        base_score += pairing_bonus
-        
-        # Gün tipinden kaçınma
-        if self.should_avoid_day_type(person_id, target_weekday, schedule, year, month):
-            base_score *= 0.3  # Büyük ceza
-        
-        # Kritik günlerde çeşitlilik
-        if target_weekday in self.critical_days:
-            if self.has_critical_day_conflict(person_id, target_date, schedule):
-                base_score = 0  # Kesin engelleme
+        day_type_count = self.get_day_type_count(person_id, target_date, existing_schedule)
+        if day_type_count == 0:
+            base_score += 50
+        elif day_type_count == 1:
+            base_score -= 25
         
         return base_score
     
-    def fill_empty_days(self, schedule: List[Tuple[date, int, str]], year: int, month: int,
-                       personnel: List[Tuple[int, str, str]], day_values: Dict[int, Dict[str, float]],
-                       stats: Dict[int, Dict[str, float]], avg_count: float, avg_value: float,
-                       exemption_dict: Dict[int, Dict[date, bool]], last_month_duty_person: int) -> List[Tuple[date, int, str]]:
-        """Boş kalan günleri doldur"""
-        personnel_ids = [p[0] for p in personnel]
-        critical_day_assignees = set()
-        
-        for i, (current_date, person_id, day_type) in enumerate(schedule):
-            if person_id is None:
-                weekday = current_date.weekday()
-                
-                if current_date in exemption_dict:
-                    day_value_id = exemption_dict[current_date]
-                else:
-                    day_value_id = self.get_weekday_id(weekday)
-                
-                day_info = day_values[day_value_id]
-                
-                if weekday == 0:  # Pazartesi başında temizle
-                    critical_day_assignees.clear()
-                
-                eligible_personnel = []
-                for person_id in personnel_ids:
-                    is_forced = (person_id in exemption_dict and 
-                                current_date in exemption_dict[person_id] and 
-                                exemption_dict[person_id][current_date] == 1)
-                    is_exempt = (person_id in exemption_dict and 
-                               current_date in exemption_dict[person_id] and 
-                               exemption_dict[person_id][current_date] == 0)
-                    
-                    if is_exempt and not is_forced:
-                        continue
-                    
-                    if current_date.day == 1 and person_id == last_month_duty_person and not is_forced:
-                        continue
-                    
-                    if not is_forced:
-                        if self.is_ramazan_kurban_conflict(person_id, current_date):
-                            continue
-                        if self.has_consecutive_days(person_id, current_date, schedule):
-                            continue
-                        if self.has_weekly_limit(person_id, current_date, schedule):
-                            continue
-                        if weekday in self.critical_days and person_id in critical_day_assignees:
-                            continue
-                        if self.check_pairing_requirements(person_id, current_date, schedule, year, month):
-                            continue
-                        if self.has_critical_day_conflict(person_id, current_date, schedule):
-                            continue
-                    
-                    score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 
-                                                         current_date, schedule, year, month)
-                    if is_forced:
-                        score += 1000
-                    eligible_personnel.append((person_id, score))
-                
-                if eligible_personnel:
-                    eligible_personnel.sort(key=lambda x: x[1], reverse=True)
-                    selected_person_id = eligible_personnel[0][0]
-                    
-                    if weekday in self.critical_days:
-                        critical_day_assignees.add(selected_person_id)
-                    
-                    schedule[i] = (current_date, selected_person_id, day_info['name'])
-                    stats[selected_person_id]['count'] += 1
-                    stats[selected_person_id]['total_value'] += day_info['value']
-        
-        return schedule
-    
-    def generate_schedule(self, year: int, month: int) -> List[Tuple[date, int, str]]:
+    def generate_schedule(self, year, month, min_nob=0, max_nob=10):
+
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
         holidays = self.get_holidays(year, month)
@@ -361,7 +271,13 @@ class DutyScheduler:
             if current_date in holiday_dict:
                 day_value_id = holiday_dict[current_date]
             else:
-                day_value_id = self.get_weekday_id(current_date.weekday())
+
+                day_value_id = self.get_weekday_id(weekday)
+            
+            if day_value_id not in day_values:
+                day_value_id = 1
+            
+
             day_info = day_values[day_value_id]
             schedule.append((current_date, None, day_info['name']))
         
@@ -406,35 +322,33 @@ class DutyScheduler:
                                                          current_date, schedule, year, month)
                     eligible_personnel.append((person_id, score))
                 
-                if eligible_personnel:
-                    eligible_personnel.sort(key=lambda x: x[1], reverse=True)
-                    selected_person_id = eligible_personnel[0][0]
-                    
-                    if current_date in holiday_dict:
-                        day_value_id = holiday_dict[current_date]
-                    else:
-                        day_value_id = self.get_weekday_id(current_date.weekday())
-                    day_info = day_values[day_value_id]
-                    
-                    schedule[i] = (current_date, selected_person_id, day_info['name'])
-                    stats[selected_person_id]['count'] += 1
-                    stats[selected_person_id]['total_value'] += day_info['value']
-        
-        # Dördüncü geçiş: Diğer günleri doldur
-        schedule = self.fill_empty_days(schedule, year, month, personnel, day_values, 
-                                       stats, avg_count, avg_value, exemption_dict, last_month_duty_person)
-        
-        # Beşinci geçiş: Hala boş gün varsa, kuralları esneterek doldur
-        for i, (current_date, person_id, day_type) in enumerate(schedule):
-            if person_id is None:
-                weekday = current_date.weekday()
+
+                if stats[person_id]['count'] >= max_nob:
+                    continue
+                
+                if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
+                    continue
+                
+                if self.has_thursday_saturday_conflict(person_id, current_date, schedule):
+                    continue
+
                 
                 if current_date in holiday_dict:
                     day_value_id = holiday_dict[current_date]
                 else:
                     day_value_id = self.get_weekday_id(weekday)
                 
-                day_info = day_values[day_value_id]
+
+                if self.has_day_type_limit_conflict(person_id, current_date, schedule):
+                    continue
+                
+                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_date, schedule, min_nob, max_nob)
+                eligible_personnel.append((person_id, priority_score))
+            
+            if eligible_personnel:
+                eligible_personnel.sort(key=lambda x: x[1], reverse=True)
+                selected_person_id = eligible_personnel[0][0]
+
                 
                 eligible_personnel = []
                 for person_id in personnel_ids:
@@ -489,4 +403,44 @@ class DutyScheduler:
         cursor.execute("SELECT ad FROM Personel WHERE id = ?", (person_id,))
         result = cursor.fetchone()
         conn.close()
+
         return result[0] if result else "Bilinmeyen"
+    
+    def display_schedule(self, schedule, year, month):
+        personnel_counts = defaultdict(int)
+        personnel_names = {}
+        
+        personnel = self.get_active_personnel()
+        for person_id, name, status in personnel:
+            personnel_names[person_id] = name
+            personnel_counts[person_id] = 0
+        
+        for _, person_id, _ in schedule:
+            if person_id:
+                personnel_counts[person_id] += 1
+        
+        month_name = calendar.month_name[month]
+        output = [f"\n{month_name} {year} Nöbet Listesi"]
+        output.append("=" * 30)
+        
+        for day in schedule:
+            date_obj, person_id, day_type = day
+            day_name = calendar.day_name[date_obj.weekday()]
+            date_str = date_obj.strftime("%d.%m.%Y")
+            
+            if person_id:
+                person_name = personnel_names.get(person_id, "Bilinmeyen")
+                count = personnel_counts[person_id]
+                line = f"{date_str} {day_name.ljust(10)} - {day_type.ljust(12)}: {person_name} [{count}]"
+            else:
+                line = f"{date_str} {day_name.ljust(10)} - {day_type.ljust(12)}: ATAMA YAPILMADI"
+            
+            output.append(line)
+        
+        output.append("\nPersonel Nöbet Özeti:")
+        output.append("-" * 25)
+        for person_id, count in sorted(personnel_counts.items(), key=lambda x: x[1], reverse=True):
+            output.append(f"{personnel_names[person_id].ljust(20)}: {count} nöbet")
+        
+        return "\n".join(output)
+
