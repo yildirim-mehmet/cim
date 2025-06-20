@@ -14,6 +14,13 @@ def test_normal_scenarios():
     
     db = Database()
     db.populate_sample_data()
+    
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM Nobet')
+    conn.commit()
+    conn.close()
+    
     scheduler = DutyScheduler(db)
     
     test_cases = [
