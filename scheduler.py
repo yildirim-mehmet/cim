@@ -145,7 +145,12 @@ class DutyScheduler:
         count_diff = total_avg_count - person_stats['count']
         value_diff = total_avg_value - person_stats['total_value']
         
-        return count_diff * 2 + value_diff
+        base_score = count_diff * 100 + value_diff * 0.01
+        
+        if person_stats['count'] >= total_avg_count + 0.5:
+            base_score -= 1000
+        
+        return base_score
     
     def generate_schedule(self, year, month):
         personnel = self.get_active_personnel()
