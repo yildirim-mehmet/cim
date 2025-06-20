@@ -159,16 +159,19 @@ class DutyScheduler:
         count_diff = total_avg_count - person_stats['count']
         value_diff = total_avg_value - person_stats['total_value']
         
-        base_score = count_diff * 2 + value_diff
+        base_score = count_diff * 10 + value_diff * 0.1
         
         if person_stats['count'] < min_nob:
-            base_score += 100
+            base_score += 1000
+        
+        if person_stats['count'] >= total_avg_count + 1:
+            base_score -= 500
         
         day_type_count = self.get_day_type_count(person_id, target_date, existing_schedule)
         if day_type_count == 0:
-            base_score += 50
+            base_score += 5
         elif day_type_count == 1:
-            base_score -= 25
+            base_score -= 2
         
         return base_score
     
