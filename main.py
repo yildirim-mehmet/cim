@@ -13,11 +13,14 @@ from database import Database
 
 def setup_environment():
     """Gerekli ortam ayarlarını yapar"""
-    if not os.path.exists("nobet_programi.db"):
-        print("Veritabanı oluşturuluyor...")
+    if os.path.exists("nobet_programi.db"):
+        print("Mevcut veritabanı bulundu.")
         db = Database()
-        db.populate_sample_data()
-        print("Örnek veriler yüklendi.")
+        db.check_and_populate_sample_data()
+        print("Veritabanı hazır.")
+    else:
+        print("❌ Veritabanı dosyası bulunamadı! nobet_programi.db dosyası gerekli.")
+        sys.exit(1)
 
 def main():
     print("Nöbet Programı Yönetim Sistemi başlatılıyor...")
