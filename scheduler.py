@@ -84,7 +84,7 @@ class DutyScheduler:
     
     def get_weekday_id(self, weekday):
         weekday_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7}
-        return weekday_mapping[weekday]
+        return weekday_mapping.get(weekday, 1)
     
     def is_ramazan_kurban_conflict(self, person_id, target_date, existing_schedule):
         ramazan_dates = set()
@@ -139,6 +139,17 @@ class DutyScheduler:
         
         return False
     
+    def has_day_type_limit_conflict(self, person_id, target_date, existing_schedule, max_same_day_type=2):
+        target_day_name = calendar.day_name[target_date.weekday()]
+        day_type_count = 0
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id:
+                if calendar.day_name[scheduled_date.weekday()] == target_day_name:
+                    day_type_count += 1
+        
+        return day_type_count >= max_same_day_type
+    
     def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value):
         person_stats = stats[person_id]
         
@@ -180,6 +191,9 @@ class DutyScheduler:
             else:
                 day_value_id = self.get_weekday_id(weekday)
             
+            if day_value_id not in day_values:
+                day_value_id = 1
+            
             day_info = day_values[day_value_id]
             
             eligible_personnel = []
@@ -198,6 +212,9 @@ class DutyScheduler:
                     continue
                 
                 if self.has_consecutive_days_conflict(person_id, current_date, schedule):
+                    continue
+                
+                if self.has_day_type_limit_conflict(person_id, current_date, schedule):
                     continue
                 
                 priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
