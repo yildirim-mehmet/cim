@@ -239,6 +239,13 @@ class DutyScheduler:
         elif day_type_count == 1:
             base_score -= 2
         
+
+        base_score = count_diff * 100 + value_diff * 0.01
+        
+        if person_stats['count'] >= total_avg_count + 0.5:
+            base_score -= 1000
+        
+
         return base_score
     
     def generate_schedule(self, year, month, min_nob=0, max_nob=10):
