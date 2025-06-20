@@ -139,15 +139,43 @@ class DutyScheduler:
         
         return False
     
-    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value):
+    def get_day_type_count(self, person_id, target_date, existing_schedule):
+        target_day_name = calendar.day_name[target_date.weekday()]
+        day_type_count = 0
+        
+        for scheduled_date, scheduled_person, _ in existing_schedule:
+            if scheduled_person == person_id:
+                if calendar.day_name[scheduled_date.weekday()] == target_day_name:
+                    day_type_count += 1
+        
+        return day_type_count
+    
+    def has_day_type_limit_conflict(self, person_id, target_date, existing_schedule, max_same_day_type=2):
+        return self.get_day_type_count(person_id, target_date, existing_schedule) >= max_same_day_type
+    
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, target_date, existing_schedule, min_nob=0, max_nob=10):
         person_stats = stats[person_id]
         
         count_diff = total_avg_count - person_stats['count']
         value_diff = total_avg_value - person_stats['total_value']
         
-        return count_diff * 2 + value_diff
+        base_score = count_diff * 10 + value_diff * 0.1
+        
+        if person_stats['count'] < min_nob:
+            base_score += 1000
+        
+        if person_stats['count'] >= total_avg_count + 1:
+            base_score -= 500
+        
+        day_type_count = self.get_day_type_count(person_id, target_date, existing_schedule)
+        if day_type_count == 0:
+            base_score += 5
+        elif day_type_count == 1:
+            base_score -= 2
+        
+        return base_score
     
-    def generate_schedule(self, year, month):
+    def generate_schedule(self, year, month, min_nob=0, max_nob=10):
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
         holidays = self.get_holidays(year, month)
@@ -180,6 +208,9 @@ class DutyScheduler:
             else:
                 day_value_id = self.get_weekday_id(weekday)
             
+            if day_value_id not in day_values:
+                day_value_id = 1
+            
             day_info = day_values[day_value_id]
             
             eligible_personnel = []
@@ -191,6 +222,9 @@ class DutyScheduler:
                     if not exemption_dict[person_id][current_date]:
                         continue
                 
+                if stats[person_id]['count'] >= max_nob:
+                    continue
+                
                 if self.is_ramazan_kurban_conflict(person_id, current_date, schedule):
                     continue
                 
@@ -200,7 +234,10 @@ class DutyScheduler:
                 if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                     continue
                 
-                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value)
+                if self.has_day_type_limit_conflict(person_id, current_date, schedule):
+                    continue
+                
+                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_date, schedule, min_nob, max_nob)
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
