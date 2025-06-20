@@ -208,30 +208,21 @@ class DutyScheduler:
         bonus = 0
         target_weekday = target_date.weekday()
         
-        if target_weekday in self.pairing_rules:
-            paired_day = self.pairing_rules[target_weekday]
-            has_pair = False
-            
-            for scheduled_date, scheduled_person, _ in schedule:
-                if (scheduled_person == person_id and scheduled_date.year == year and 
-                    scheduled_date.month == month and scheduled_date.weekday() == paired_day):
-                    has_pair = True
-                    break
-            
-            if not has_pair:
-                bonus += 200  # Güçlü eşleştirme bonusu
-        
 
-        base_score = count_diff * 2 + value_diff
+        base_score = count_diff * 10 + value_diff * 0.1
+
         
         if person_stats['count'] < min_nob:
-            base_score += 100
+            base_score += 1000
+        
+        if person_stats['count'] >= total_avg_count + 1:
+            base_score -= 500
         
         day_type_count = self.get_day_type_count(person_id, target_date, existing_schedule)
         if day_type_count == 0:
-            base_score += 50
+            base_score += 5
         elif day_type_count == 1:
-            base_score -= 25
+            base_score -= 2
         
         return base_score
     
