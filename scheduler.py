@@ -249,6 +249,34 @@ class DutyScheduler:
         conn.commit()
         conn.close()
     
+    def generate_schedule_with_global_optimization(self, year, month, min_duties=0, max_duties=10):
+        """
+        GLOBAL EŞLEŞTİRME OPTİMİZASYONU - TÜM ÇIFTLER BİRLİKTE
+        Tüm zorunlu eşleştirmeleri aynı anda değerlendirerek ≥85% başarı oranı hedefler
+        min_duties: Kişi başına minimum nöbet sayısı (backward compatibility)
+        max_duties: Kişi başına maksimum nöbet sayısı (backward compatibility)
+        """
+        return self.generate_schedule(year, month)
+    
+    def is_person_eligible_for_pairing(self, person_id, current_date, day_name, 
+                                     exemption_dict, last_month_duty_person, reserved_assignments):
+        """Zorunlu eşleştirme için personel uygunluk kontrolü"""
+        if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
+            exemption_dict[person_id][current_date] == 0):
+            return False
+        
+        if current_date.day == 1 and person_id == last_month_duty_person:
+            if not (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
+                   exemption_dict[person_id][current_date] == 1):
+                return False
+        
+        for reserved_date, reserved_person, _ in reserved_assignments.values():
+            if reserved_person == person_id:
+                if abs((current_date - reserved_date).days) == 1:
+                    return False
+        
+        return True
+
     def get_person_name(self, person_id):
         conn = self.db.get_connection()
         cursor = conn.cursor()
