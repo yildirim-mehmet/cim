@@ -95,18 +95,7 @@ class DutyScheduler:
         weekday_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7}
         return weekday_mapping.get(weekday, 1)
     
-    def calculate_priority_score(self, person_id, stats, avg_count, avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
-        """Adil dağıtım için öncelik puanı hesaplama - min/max kısıtları dahil"""
-        person_stats = stats[person_id]
-        count_diff = avg_count - person_stats['count']
-        value_diff = avg_value - person_stats['total_value']
-        
-        base_score = count_diff * 2 + value_diff
-        
-        if current_monthly_count < min_duties:
-            base_score += 100
-            
-        return base_score
+
     
     def is_person_eligible_for_pairing(self, person_id, current_date, day_name, 
                                      exemption_dict, last_month_duty_person, reserved_assignments):
@@ -139,7 +128,7 @@ class DutyScheduler:
         return False
     
 
-    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=3, max_duties=4):
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
         """
         Enhanced Max-Min priority scoring system
         Guarantees maximum 1 duty difference between personnel by heavily weighting count equality
@@ -155,17 +144,17 @@ class DutyScheduler:
             base_score -= 1000
         
         if current_monthly_count >= max_duties:
-            base_score -= 5000  # Heavily penalize exceeding max
+            base_score -= 10000  # Heavily penalize exceeding max
         elif current_monthly_count < min_duties:
-            base_score += 1000  # Strongly encourage reaching min
+            base_score += 5000  # Strongly encourage reaching min
         
         max_allowed_difference = max_duties - min_duties
         if person_stats['count'] > total_avg_count + max_allowed_difference / 2:
-            base_score -= 3000  # Prevent excessive duty accumulation beyond allowed difference
+            base_score -= 8000  # Prevent excessive duty accumulation beyond allowed difference
         
         return base_score
     
-    def generate_schedule(self, year, month, min_duties=3, max_duties=4):
+    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
 
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
@@ -241,7 +230,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
+                        priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'thursday_saturday',
                             'priority': priority_score + 2000,  # En yüksek öncelik
@@ -275,7 +264,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
+                        priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'friday_sunday',
                             'priority': priority_score + 1500,  # Yüksek öncelik
@@ -309,7 +298,7 @@ class DutyScheduler:
                         ):
                             continue
                         
-                        priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, 0, min_duties, max_duties)
+                        priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, 0, min_duties, max_duties)
                         all_possible_pairs.append({
                             'type': 'sunday_monday',
                             'priority': priority_score + 1000,  # Orta öncelik
@@ -387,7 +376,7 @@ class DutyScheduler:
                 if week_conflict:
                     continue
                 
-                priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_monthly_count, min_duties, max_duties)
+                priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, current_monthly_count, min_duties, max_duties)
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
@@ -425,7 +414,7 @@ class DutyScheduler:
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                         continue
                     
-                    priority_score = self.calculate_priority_score(person_id, stats, avg_count, avg_value, current_monthly_count, min_duties, max_duties)
+                    priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, current_monthly_count, min_duties, max_duties)
                     
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 1):
@@ -474,14 +463,14 @@ class DutyScheduler:
         conn.commit()
         conn.close()
     
-    def generate_schedule_with_global_optimization(self, year, month, min_duties=3, max_duties=4):
+    def generate_schedule_with_global_optimization(self, year, month, min_duties=0, max_duties=10):
         """
         GLOBAL EŞLEŞTİRME OPTİMİZASYONU - TÜM ÇIFTLER BİRLİKTE
         Tüm zorunlu eşleştirmeleri aynı anda değerlendirerek ≥85% başarı oranı hedefler
         min_duties: Kişi başına minimum nöbet sayısı (backward compatibility)
         max_duties: Kişi başına maksimum nöbet sayısı (backward compatibility)
         """
-        return self.generate_schedule(year, month)
+        return self.generate_schedule(year, month, min_duties, max_duties)
     
     def is_person_eligible_for_pairing(self, person_id, current_date, day_name, 
                                      exemption_dict, last_month_duty_person, reserved_assignments):
