@@ -144,17 +144,24 @@ class DutyScheduler:
             base_score -= 1000
         
         if current_monthly_count >= max_duties:
-            base_score -= 10000  # Heavily penalize exceeding max
+            base_score -= 1000000  # ABSOLUTE penalty for exceeding max - must NEVER happen
         elif current_monthly_count < min_duties:
-            base_score += 5000  # Strongly encourage reaching min
+            deficit = min_duties - current_monthly_count
+            base_score += 100000 * (deficit + 1)  # Exponentially higher priority for bigger deficits
         
-        max_allowed_difference = max_duties - min_duties
-        if person_stats['count'] > total_avg_count + max_allowed_difference / 2:
-            base_score -= 8000  # Prevent excessive duty accumulation beyond allowed difference
+        if current_monthly_count == max_duties - 1:
+            base_score -= 50000  # Heavy penalty for approaching max
+        elif current_monthly_count == max_duties - 2 and max_duties > min_duties + 1:
+            base_score -= 10000  # Moderate penalty for getting close to max
+        
+        if current_monthly_count == min_duties - 1:
+            base_score += 75000  # High bonus for almost reaching min
+        elif current_monthly_count == min_duties - 2 and min_duties > 1:
+            base_score += 25000  # Moderate bonus for getting close to min
         
         return base_score
     
-    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
+    def generate_schedule(self, year, month, min_duties=3, max_duties=4):
 
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
@@ -354,6 +361,16 @@ class DutyScheduler:
                 
                 if current_monthly_count >= max_duties:
                     continue
+                
+                current_schedule_list = [(d[0], reserved_assignments.get(d[0], (None, None, None))[1], d[1]) for d in all_days if d[0] in reserved_assignments]
+                temp_monthly_count = self.get_current_monthly_count(person_id, current_schedule_list, year, month)
+                
+                if temp_monthly_count < min_duties:
+                    others_at_min = sum(1 for pid in personnel_ids 
+                                      if pid != person_id and 
+                                      self.get_current_monthly_count(pid, current_schedule_list, year, month) >= min_duties)
+                    if others_at_min > 0:
+                        pass  # Continue with high priority
                     
                 if person_critical_count[person_id] >= 3:
                     continue
@@ -401,6 +418,13 @@ class DutyScheduler:
                     
                     if current_monthly_count >= max_duties:
                         continue
+                    
+                    if current_monthly_count < min_duties:
+                        others_at_min = sum(1 for pid in personnel_ids 
+                                          if pid != person_id and 
+                                          self.get_current_monthly_count(pid, schedule, year, month) >= min_duties)
+                        if others_at_min > 0:
+                            pass  # Continue with high priority
                     
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 0):
