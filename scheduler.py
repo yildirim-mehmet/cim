@@ -166,8 +166,8 @@ class DutyScheduler:
         
         total_count = sum(s['count'] for s in stats.values())
         total_value = sum(s['total_value'] for s in stats.values())
-        avg_count = total_count / len(personnel_ids) if personnel_ids else 0
-        avg_value = total_value / len(personnel_ids) if personnel_ids else 0
+        total_avg_count = total_count / len(personnel_ids) if personnel_ids else 0
+        total_avg_value = total_value / len(personnel_ids) if personnel_ids else 0
         
         last_month_duty_person = self.get_last_month_last_duty(year, month)
         
