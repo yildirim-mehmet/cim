@@ -139,7 +139,7 @@ class DutyScheduler:
         return False
     
 
-    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=3, max_duties=4):
         """
         Enhanced Max-Min priority scoring system
         Guarantees maximum 1 duty difference between personnel by heavily weighting count equality
@@ -155,13 +155,17 @@ class DutyScheduler:
             base_score -= 1000
         
         if current_monthly_count >= max_duties:
-            base_score -= 2000
+            base_score -= 5000  # Heavily penalize exceeding max
         elif current_monthly_count < min_duties:
-            base_score += 500
+            base_score += 1000  # Strongly encourage reaching min
+        
+        max_allowed_difference = max_duties - min_duties
+        if person_stats['count'] > total_avg_count + max_allowed_difference / 2:
+            base_score -= 3000  # Prevent excessive duty accumulation beyond allowed difference
         
         return base_score
     
-    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
+    def generate_schedule(self, year, month, min_duties=3, max_duties=4):
 
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
@@ -470,7 +474,7 @@ class DutyScheduler:
         conn.commit()
         conn.close()
     
-    def generate_schedule_with_global_optimization(self, year, month, min_duties=0, max_duties=10):
+    def generate_schedule_with_global_optimization(self, year, month, min_duties=3, max_duties=4):
         """
         GLOBAL EŞLEŞTİRME OPTİMİZASYONU - TÜM ÇIFTLER BİRLİKTE
         Tüm zorunlu eşleştirmeleri aynı anda değerlendirerek ≥85% başarı oranı hedefler
