@@ -1,1 +1,0 @@
-python -m PyInstaller --onefile --windowed --add-data "nobet_programi.db;." --clean --noconsole main.py
