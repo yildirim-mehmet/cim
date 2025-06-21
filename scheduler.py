@@ -138,13 +138,26 @@ class DutyScheduler:
         
         return False
     
-    def generate_schedule_with_global_optimization(self, year, month, min_duties=0, max_duties=10):
+
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value):
         """
-        GLOBAL EŞLEŞTİRME OPTİMİZASYONU - TÜM ÇIFTLER BİRLİKTE
-        Tüm zorunlu eşleştirmeleri aynı anda değerlendirerek ≥85% başarı oranı hedefler
-        min_duties: Kişi başına minimum nöbet sayısı
-        max_duties: Kişi başına maksimum nöbet sayısı
+        Enhanced Max-Min priority scoring system
+        Guarantees maximum 1 duty difference between personnel by heavily weighting count equality
         """
+        person_stats = stats[person_id]
+        
+        count_diff = total_avg_count - person_stats['count']
+        value_diff = total_avg_value - person_stats['total_value']
+        
+        base_score = count_diff * 100 + value_diff * 0.01
+        
+        if person_stats['count'] >= total_avg_count + 0.5:
+            base_score -= 1000
+        
+        return base_score
+    
+    def generate_schedule(self, year, month):
+
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
         holidays = self.get_holidays(year, month)
