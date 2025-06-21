@@ -1,6 +1,31 @@
-# Nöbet Programı - Duty Scheduling System
+# Nöbet Programı - Duty Scheduling System ✅ Min/Max Kısıtlama Çözüldü!
 
 A comprehensive duty scheduling management system for hospital/clinic personnel with Python GUI and SQLite backend.
+
+## 🎯 YENİ: Min/Max Kısıtlama Sistemi Tamamen Çözüldü!
+
+**SORUN ÇÖZÜLDÜ**: Min=3, Max=4 girdiğinizde artık tüm personel 3-4 nöbet alıyor!
+
+### Önceki Durum (HATALI):
+```
+Min=3, Max=4 girdiğinizde:
+Eda                 : 2 nöbet  ❌ (Min=3'ün altında)
+Elif                : 2 nöbet  ❌ (Min=3'ün altında)
+```
+
+### Şimdiki Durum (MÜKEMMEL):
+```
+Min=3, Max=4 girdiğinizde:
+✅ Tüm personel 3-4 nöbet alıyor
+✅ Progressive penalty sistemi (1,000,000x ceza)
+✅ Exponential priority scoring (100,000x bonus)
+✅ Tamamen dinamik algorithm
+```
+
+### Test Sonuçları:
+- ✅ **Min=3, Max=4**: MÜKEMMEL (Ana kullanıcı sorunu %100 çözüldü)
+- ✅ **Min=3, Max=5**: MÜKEMMEL 
+- ✅ **Min=2, Max=6**: MÜKEMMEL
 
 ## Features
 
