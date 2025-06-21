@@ -129,7 +129,7 @@ class ConsoleApp:
     def run(self):
         print("🏥 Nöbet Programı Yönetim Sistemi başlatılıyor...")
         
-        self.db.populate_sample_data()
+        self.db.check_and_populate_sample_data()
         print("✅ Veritabanı hazırlandı.")
         
         while True:
