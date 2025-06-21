@@ -139,3 +139,7 @@ class Database:
         
         conn.commit()
         conn.close()
+    
+    def populate_sample_data(self):
+        """Backward compatibility wrapper for check_and_populate_sample_data"""
+        return self.check_and_populate_sample_data()

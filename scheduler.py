@@ -139,7 +139,7 @@ class DutyScheduler:
         return False
     
 
-    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value):
+    def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
         """
         Enhanced Max-Min priority scoring system
         Guarantees maximum 1 duty difference between personnel by heavily weighting count equality
@@ -154,9 +154,14 @@ class DutyScheduler:
         if person_stats['count'] >= total_avg_count + 0.5:
             base_score -= 1000
         
+        if current_monthly_count >= max_duties:
+            base_score -= 2000
+        elif current_monthly_count < min_duties:
+            base_score += 500
+        
         return base_score
     
-    def generate_schedule(self, year, month):
+    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
 
         personnel = self.get_active_personnel()
         day_values = self.get_day_values()
@@ -437,7 +442,7 @@ class DutyScheduler:
         
         return schedule
     
-    def generate_schedule(self, year, month, min_duties=0, max_duties=10):
+    def generate_schedule_main(self, year, month, min_duties=0, max_duties=10):
         """Ana nöbet programı oluşturma metodu"""
         return self.generate_schedule_with_global_optimization(year, month, min_duties, max_duties)
     

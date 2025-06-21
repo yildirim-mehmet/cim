@@ -612,6 +612,32 @@ class DutySchedulerGUI:
         ttk.Button(btn_frame, text="Ekle", command=add_personnel).grid(row=0, column=0, padx=5)
         ttk.Button(btn_frame, text="Temizle", command=clear_form).grid(row=0, column=1, padx=5)
         
+        def delete_personnel():
+            selection = personnel_tree.selection()
+            if not selection:
+                messagebox.showwarning("Uyarı", "Lütfen silinecek personeli seçin!")
+                return
+            
+            item = personnel_tree.item(selection[0])
+            person_id = item['values'][0]
+            person_name = item['values'][1]
+            
+            if messagebox.askyesno("Onay", f"{person_name} personelini silmek istediğinizden emin misiniz?"):
+                try:
+                    conn = self.db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM Personel WHERE id = ?", (person_id,))
+                    conn.commit()
+                    conn.close()
+                    
+                    messagebox.showinfo("Başarılı", f"{person_name} personeli başarıyla silindi!")
+                    refresh_personnel_list()
+                    self.load_personnel()
+                except Exception as e:
+                    messagebox.showerror("Hata", f"Personel silinirken hata oluştu: {str(e)}")
+        
+        ttk.Button(btn_frame, text="Sil", command=delete_personnel).grid(row=0, column=2, padx=5)
+        
         list_frame = ttk.LabelFrame(main_frame, text="Mevcut Personeller", padding="10")
         list_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
         
