@@ -688,6 +688,7 @@ class DutyScheduler:
         """
         Nöbet programını formatlanmış şekilde gösterir
         Tüm günleri alt alta sıralar, personel adları ve o ay kaç nöbet aldıklarını gösterir
+        Ardışık nöbet atamalarını kırmızı renkle vurgular
         """
         from collections import defaultdict
         import calendar
@@ -698,11 +699,14 @@ class DutyScheduler:
         personnel = self.get_active_personnel()
         for person_id, name, status in personnel:
             personnel_names[person_id] = name
-            personnel_counts[person_id] = 0  # Başlangıçta 0
+            personnel_counts[person_id] = 0
         
         for _, person_id, _ in schedule:
             if person_id:
                 personnel_counts[person_id] += 1
+        
+        consecutive_assignments = self.detect_consecutive_assignments(schedule)
+        consecutive_dates = set(date for date, person in consecutive_assignments)
         
         month_name = calendar.month_name[month]
         output = [f"\n{month_name} {year} Nöbet Listesi"]
@@ -717,10 +721,27 @@ class DutyScheduler:
                 person_name = personnel_names.get(person_id, "Bilinmeyen")
                 count = personnel_counts[person_id]
                 line = f"{date_str} {day_name.ljust(10)} - {day_type.ljust(12)}: {person_name} [{count}]"
+                
+                if date_obj in consecutive_dates:
+                    line += " ⚠️ ARDIŞIK NÖBET"
             else:
                 line = f"{date_str} {day_name.ljust(10)} - {day_type.ljust(12)}: ATAMA YAPILMADI"
             
             output.append(line)
+        
+        if consecutive_assignments:
+            output.append("\n⚠️ UYARI: ARDIŞIK NÖBET ATAMALARI TESPİT EDİLDİ!")
+            output.append("-" * 50)
+            consecutive_persons = {}
+            for date, person in consecutive_assignments:
+                if person not in consecutive_persons:
+                    consecutive_persons[person] = []
+                consecutive_persons[person].append(date)
+            
+            for person_id, dates in consecutive_persons.items():
+                person_name = personnel_names.get(person_id, "Bilinmeyen")
+                date_strs = [d.strftime("%d.%m.%Y") for d in sorted(set(dates))]
+                output.append(f"• {person_name}: {', '.join(date_strs)}")
         
         output.append("\nPersonel Nöbet Özeti:")
         output.append("-" * 25)
@@ -729,6 +750,24 @@ class DutyScheduler:
         
         return "\n".join(output)
     
+    def detect_consecutive_assignments(self, schedule):
+        """Ardışık nöbet atamalarını tespit eder"""
+        consecutive_assignments = []
+        
+        sorted_schedule = sorted(schedule, key=lambda x: x[0])
+        
+        for i in range(len(sorted_schedule) - 1):
+            current_date, current_person, current_day_type = sorted_schedule[i]
+            next_date, next_person, next_day_type = sorted_schedule[i + 1]
+            
+            if (current_person and next_person and 
+                current_person == next_person and 
+                (next_date - current_date).days == 1):
+                consecutive_assignments.append((current_date, current_person))
+                consecutive_assignments.append((next_date, next_person))
+        
+        return consecutive_assignments
+
     def get_current_monthly_count(self, person_id, schedule, year, month):
         """Mevcut programdaki kişinin aylık nöbet sayısını hesaplar"""
         return sum(1 for scheduled_date, scheduled_person, _ in schedule 

@@ -167,18 +167,20 @@ class DutySchedulerGUI:
         for i in range(7):
             self.calendar_frame.columnconfigure(i, weight=1)
     
-    def get_day_color(self, date_obj, day_type):
+    def get_day_color(self, date_obj, day_type, is_consecutive=False):
         weekday = date_obj.weekday()
         
-        if 'Tatil' in day_type or 'Resmi Tatil' in day_type:
+        if is_consecutive:
+            return '#FFB6C1'
+        elif 'Tatil' in day_type or 'Resmi Tatil' in day_type:
             return '#FFE4B5'
         elif weekday in [5, 6]:
             return '#E6F3FF'
         else:
             return '#F8F8F8'
     
-    def create_day_cell(self, parent, row, col, day_num, person_name, day_type, date_obj):
-        cell_color = self.get_day_color(date_obj, day_type)
+    def create_day_cell(self, parent, row, col, day_num, person_name, day_type, date_obj, is_consecutive=False):
+        cell_color = self.get_day_color(date_obj, day_type, is_consecutive)
         
         cell_frame = tk.Frame(parent, bg=cell_color, relief='solid', bd=1, width=100, height=80)
         cell_frame.grid(row=row, column=col, padx=1, pady=1, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -189,14 +191,20 @@ class DutySchedulerGUI:
         day_label.grid(row=0, column=0, sticky=(tk.W, tk.E))
         
         if person_name and person_name != "ATANMADI":
+            text_color = 'darkred' if is_consecutive else 'darkblue'
             person_label = tk.Label(cell_frame, text=person_name, font=('Arial', 9), 
-                                  bg=cell_color, fg='darkblue', wraplength=90)
+                                  bg=cell_color, fg=text_color, wraplength=90)
             person_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=2)
         
         if 'Tatil' in day_type or day_type not in ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']:
             type_label = tk.Label(cell_frame, text=day_type, font=('Arial', 8), 
                                 bg=cell_color, fg='darkred', wraplength=90)
             type_label.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        
+        if is_consecutive:
+            warning_label = tk.Label(cell_frame, text="⚠️", font=('Arial', 8), 
+                                   bg=cell_color, fg='red')
+            warning_label.grid(row=3, column=0, sticky=(tk.W, tk.E))
         
         cell_frame.columnconfigure(0, weight=1)
         
@@ -431,6 +439,13 @@ class DutySchedulerGUI:
             
             schedule_display = self.scheduler.display_schedule(self.current_schedule, self.selected_year, self.selected_month)
             
+            consecutive_assignments = self.scheduler.detect_consecutive_assignments(self.current_schedule)
+            if consecutive_assignments:
+                messagebox.showwarning("Ardışık Nöbet Uyarısı", 
+                                     "⚠️ UYARI: Nöbet programında ardışık nöbet atamaları tespit edildi!\n\n" +
+                                     "Kırmızı renkle işaretlenmiş günleri kontrol edin.\n" +
+                                     "Detaylar için nöbet listesini inceleyin.")
+            
             detail_window = tk.Toplevel(self.root)
             detail_window.title("Nöbet Programı Hazırlandı")
             detail_window.geometry("600x700")
@@ -439,6 +454,13 @@ class DutySchedulerGUI:
             main_label = ttk.Label(detail_window, text=f"{self.selected_year}/{self.selected_month} ayı için nöbet programı hazırlandı!", 
                                  font=("Arial", 12, "bold"))
             main_label.pack(pady=10)
+            
+            if consecutive_assignments:
+                warning_label = ttk.Label(detail_window, 
+                                        text="⚠️ UYARI: Ardışık nöbet atamaları tespit edildi!", 
+                                        font=("Arial", 10, "bold"), 
+                                        foreground="red")
+                warning_label.pack(pady=5)
             
             frame = ttk.Frame(detail_window)
             frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -450,7 +472,14 @@ class DutySchedulerGUI:
             text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             
-            text_widget.insert(tk.END, schedule_display)
+            lines = schedule_display.split('\n')
+            for line in lines:
+                if "⚠️ ARDIŞIK NÖBET" in line:
+                    text_widget.insert(tk.END, line + '\n', 'consecutive')
+                else:
+                    text_widget.insert(tk.END, line + '\n')
+            
+            text_widget.tag_configure('consecutive', foreground='red', font=('Courier', 10, 'bold'))
             text_widget.config(state=tk.DISABLED)
             
             close_button = ttk.Button(detail_window, text="Kapat", command=detail_window.destroy)
@@ -484,9 +513,40 @@ class DutySchedulerGUI:
         
         self.populate_calendar(schedule_dict)
     
+    def check_consecutive_assignments(self):
+        """Ardışık nöbet atamalarını kontrol eder ve uyarı verir"""
+        if not hasattr(self, 'current_schedule') or not self.current_schedule:
+            return True
+        
+        consecutive_assignments = self.scheduler.detect_consecutive_assignments(self.current_schedule)
+        if consecutive_assignments:
+            consecutive_persons = {}
+            for date, person in consecutive_assignments:
+                if person not in consecutive_persons:
+                    consecutive_persons[person] = []
+                consecutive_persons[person].append(date)
+            
+            warning_msg = "⚠️ UYARI: ARDIŞIK NÖBET ATAMALARI TESPİT EDİLDİ!\n\n"
+            warning_msg += "Aşağıdaki personel ardışık günlerde nöbet almaktadır:\n\n"
+            
+            for person_id, dates in consecutive_persons.items():
+                person_name = self.scheduler.get_person_name(person_id)
+                date_strs = [d.strftime("%d.%m.%Y") for d in sorted(set(dates))]
+                warning_msg += f"• {person_name}: {', '.join(date_strs)}\n"
+            
+            warning_msg += "\nBu durumda devam etmek istiyor musunuz?"
+            
+            result = messagebox.askyesno("Ardışık Nöbet Uyarısı", warning_msg)
+            return result
+        
+        return True
+
     def save_schedule(self):
         if not self.current_schedule:
             messagebox.showwarning("Uyarı", "Önce nöbet programını hazırlayın!")
+            return
+        
+        if not self.check_consecutive_assignments():
             return
         
         try:
@@ -498,6 +558,9 @@ class DutySchedulerGUI:
     
     def export_to_excel(self):
         try:
+            if not self.check_consecutive_assignments():
+                return
+                
             filename = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
@@ -731,6 +794,11 @@ class DutySchedulerGUI:
             cell.destroy()
         self.day_cells.clear()
         
+        consecutive_dates = set()
+        if hasattr(self, 'current_schedule') and self.current_schedule:
+            consecutive_assignments = self.scheduler.detect_consecutive_assignments(self.current_schedule)
+            consecutive_dates = set(date for date, person in consecutive_assignments)
+        
         days_in_month = calendar.monthrange(self.selected_year, self.selected_month)[1]
         first_weekday = calendar.monthrange(self.selected_year, self.selected_month)[0]
         
@@ -750,8 +818,10 @@ class DutySchedulerGUI:
                 weekday_names = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
                 day_type = weekday_names[weekday]
             
+            is_consecutive = date_obj in consecutive_dates
+            
             cell = self.create_day_cell(self.calendar_frame, current_row, current_col, 
-                                      day, person_name, day_type, date_obj)
+                                      day, person_name, day_type, date_obj, is_consecutive)
             self.day_cells[date_str] = cell
             
             current_col += 1
