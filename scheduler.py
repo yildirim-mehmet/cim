@@ -3,6 +3,16 @@ import calendar
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 
+SAME_DAY_PRIORITY = {
+    'Salı': 1,        # Tuesday - Highest priority
+    'Çarşamba': 2,    # Wednesday - Second priority  
+    'Pazartesi': 3,   # Monday - Third priority
+    'Cuma': 4,        # Friday - Fourth priority
+    'Pazar': 5,       # Sunday - Fifth priority
+    'Perşembe': 6,    # Thursday - Sixth priority
+    'Cumartesi': 7    # Saturday - Lowest priority
+}
+
 class DutyScheduler:
     def __init__(self, db):
         self.db = db
@@ -127,6 +137,110 @@ class DutyScheduler:
         
         return False
     
+    def get_same_day_count(self, person_id, target_date, schedule, year, month):
+        """Aynı gün türünde kaç kez atama yapıldığını hesaplar"""
+        target_weekday = target_date.weekday()
+        count = 0
+        for scheduled_date, scheduled_person, _ in schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.year == year and 
+                scheduled_date.month == month and
+                scheduled_date.weekday() == target_weekday):
+                count += 1
+        return count
+
+    def has_same_day_priority_conflict(self, person_id, target_date, day_name, schedule, year, month):
+        """Aynı gün öncelik kurallarına göre çakışma kontrolü"""
+        same_day_count = self.get_same_day_count(person_id, target_date, schedule, year, month)
+        
+        if same_day_count == 0:
+            return False
+            
+        day_priority = SAME_DAY_PRIORITY.get(day_name, 8)
+        
+        if day_priority >= 4 and same_day_count >= 1:
+            return True
+        elif day_priority >= 2 and same_day_count >= 2:
+            return True
+        elif same_day_count >= 3:
+            return True
+            
+        return False
+
+    def has_critical_day_same_value_conflict(self, person_id, target_date, day_name, schedule, year, month):
+        """Kritik günlerde aynı gün değerlerine aynı kişiler yazılmamalı"""
+        critical_days = ['Cuma', 'Cumartesi', 'Perşembe', 'Pazar']
+        
+        if day_name not in critical_days:
+            return False
+            
+        person_critical_assignments = []
+        for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.year == year and 
+                scheduled_date.month == month and
+                scheduled_day_name in critical_days):
+                person_critical_assignments.append(scheduled_day_name)
+        
+        if day_name in person_critical_assignments:
+            return True
+            
+        return False
+
+    def needs_enhanced_day_pairing(self, person_id, target_date, day_name, schedule, year, month):
+        """Gelişmiş gün eşleştirme kuralları kontrolü"""
+        target_week = target_date.isocalendar()[1]
+        
+        if day_name == 'Cumartesi':
+            has_thursday = False
+            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.year == year and 
+                    scheduled_date.month == month and
+                    scheduled_day_name == 'Perşembe' and
+                    scheduled_date.isocalendar()[1] != target_week):
+                    has_thursday = True
+                    break
+            return not has_thursday
+            
+        elif day_name == 'Perşembe':
+            has_saturday = False
+            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.year == year and 
+                    scheduled_date.month == month and
+                    scheduled_day_name == 'Cumartesi' and
+                    scheduled_date.isocalendar()[1] != target_week):
+                    has_saturday = True
+                    break
+            return not has_saturday
+            
+        elif day_name == 'Pazar':
+            has_monday = False
+            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.year == year and 
+                    scheduled_date.month == month and
+                    scheduled_day_name == 'Pazartesi' and
+                    scheduled_date.isocalendar()[1] != target_week):
+                    has_monday = True
+                    break
+            return not has_monday
+            
+        elif day_name == 'Pazartesi':
+            has_sunday = False
+            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+                if (scheduled_person == person_id and 
+                    scheduled_date.year == year and 
+                    scheduled_date.month == month and
+                    scheduled_day_name == 'Pazar' and
+                    scheduled_date.isocalendar()[1] != target_week):
+                    has_sunday = True
+                    break
+            return not has_sunday
+            
+        return False
+    
 
     def calculate_priority_score(self, person_id, stats, total_avg_count, total_avg_value, current_monthly_count=0, min_duties=0, max_duties=10):
         """
@@ -158,6 +272,29 @@ class DutyScheduler:
             base_score += 75000  # High bonus for almost reaching min
         elif current_monthly_count == min_duties - 2 and min_duties > 1:
             base_score += 25000  # Moderate bonus for getting close to min
+        
+        return base_score
+
+    def calculate_enhanced_priority_score(self, person_id, stats, total_avg_count, total_avg_value, 
+                                        current_date, day_name, schedule, year, month, 
+                                        current_monthly_count=0, min_duties=3, max_duties=4):
+        """
+        Tüm yeni kuralları içeren gelişmiş öncelik puanlama sistemi
+        """
+        base_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, 
+                                                  current_monthly_count, min_duties, max_duties)
+        
+        if self.has_same_day_priority_conflict(person_id, current_date, day_name, schedule, year, month):
+            same_day_count = self.get_same_day_count(person_id, current_date, schedule, year, month)
+            day_priority = SAME_DAY_PRIORITY.get(day_name, 8)
+            penalty = 50000 * same_day_count * day_priority
+            base_score -= penalty
+        
+        if self.has_critical_day_same_value_conflict(person_id, current_date, day_name, schedule, year, month):
+            base_score -= 75000
+        
+        if self.needs_enhanced_day_pairing(person_id, current_date, day_name, schedule, year, month):
+            base_score += 30000
         
         return base_score
     
@@ -362,15 +499,12 @@ class DutyScheduler:
                 if current_monthly_count >= max_duties:
                     continue
                 
-                current_schedule_list = [(d[0], reserved_assignments.get(d[0], (None, None, None))[1], d[1]) for d in all_days if d[0] in reserved_assignments]
-                temp_monthly_count = self.get_current_monthly_count(person_id, current_schedule_list, year, month)
-                
-                if temp_monthly_count < min_duties:
+                if current_monthly_count < min_duties:
                     others_at_min = sum(1 for pid in personnel_ids 
                                       if pid != person_id and 
                                       self.get_current_monthly_count(pid, current_schedule_list, year, month) >= min_duties)
                     if others_at_min > 0:
-                        pass  # Continue with high priority
+                        pass
                     
                 if person_critical_count[person_id] >= 3:
                     continue
@@ -379,6 +513,15 @@ class DutyScheduler:
                     person_id, current_date, day_name, exemption_dict, 
                     last_month_duty_person, reserved_assignments
                 ):
+                    continue
+                
+                if self.has_same_day_priority_conflict(person_id, current_date, day_name, current_schedule_list, year, month):
+                    day_priority = SAME_DAY_PRIORITY.get(day_name, 8)
+                    same_day_count = self.get_same_day_count(person_id, current_date, current_schedule_list, year, month)
+                    if day_priority >= 6 or same_day_count >= 2:
+                        continue
+                
+                if self.has_critical_day_same_value_conflict(person_id, current_date, day_name, current_schedule_list, year, month):
                     continue
                 
                 week_conflict = False
@@ -393,7 +536,11 @@ class DutyScheduler:
                 if week_conflict:
                     continue
                 
-                priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, current_monthly_count, min_duties, max_duties)
+                priority_score = self.calculate_enhanced_priority_score(
+                    person_id, stats, total_avg_count, total_avg_value, 
+                    current_date, day_name, current_schedule_list, year, month,
+                    current_monthly_count, min_duties, max_duties
+                )
                 eligible_personnel.append((person_id, priority_score))
             
             if eligible_personnel:
@@ -424,7 +571,7 @@ class DutyScheduler:
                                           if pid != person_id and 
                                           self.get_current_monthly_count(pid, schedule, year, month) >= min_duties)
                         if others_at_min > 0:
-                            pass  # Continue with high priority
+                            pass
                     
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 0):
@@ -438,7 +585,20 @@ class DutyScheduler:
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                         continue
                     
-                    priority_score = self.calculate_priority_score(person_id, stats, total_avg_count, total_avg_value, current_monthly_count, min_duties, max_duties)
+                    if self.has_same_day_priority_conflict(person_id, current_date, day_name, schedule, year, month):
+                        day_priority = SAME_DAY_PRIORITY.get(day_name, 8)
+                        same_day_count = self.get_same_day_count(person_id, current_date, schedule, year, month)
+                        if day_priority >= 6 or same_day_count >= 2:
+                            continue
+                    
+                    if self.has_critical_day_same_value_conflict(person_id, current_date, day_name, schedule, year, month):
+                        continue
+                    
+                    priority_score = self.calculate_enhanced_priority_score(
+                        person_id, stats, total_avg_count, total_avg_value, 
+                        current_date, day_name, schedule, year, month,
+                        current_monthly_count, min_duties, max_duties
+                    )
                     
                     if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                         exemption_dict[person_id][current_date] == 1):
