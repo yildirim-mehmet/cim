@@ -273,8 +273,8 @@ class DutyScheduler:
         Kurallar:
         1-Cumartesi yazılmışsa Perşembe Yazılmalı (aynı ay farklı hafta)
         2-Perşembe yazılmışsa Cumartesi Yazılmalı (aynı ay farklı hafta)  
-        3-Pazar Yazılmışsa Pazartesi Yazılmalı (aynı ay farklı hafta)
-        4-Pazartesi yazılmışsa Pazar yazılmalı (aynı ay farklı hafta)
+        3-Pazar Yazılmışsa Cuma Yazılmalı (aynı ay farklı hafta)
+        4-Cuma yazılmışsa Pazar yazılmalı (aynı ay farklı hafta)
         
         Returns: True - Eşleştirme gereksinimi var (atama yapılamaz), False - Eşleştirme tamam (atama yapılabilir)
         """
@@ -296,10 +296,10 @@ class DutyScheduler:
         if 'Perşembe' in person_days and 'Cumartesi' not in person_days:
             incomplete_pairings.append('needs_saturday')
         
-        if 'Pazar' in person_days and 'Pazartesi' not in person_days:
-            incomplete_pairings.append('needs_monday')
+        if 'Pazar' in person_days and 'Cuma' not in person_days:
+            incomplete_pairings.append('needs_friday')
         
-        if 'Pazartesi' in person_days and 'Pazar' not in person_days:
+        if 'Cuma' in person_days and 'Pazar' not in person_days:
             incomplete_pairings.append('needs_sunday')
         
         if incomplete_pairings:
@@ -307,10 +307,10 @@ class DutyScheduler:
                 return False  # Cumartesi var, Perşembe veriliyor - eşleştirme tamamlanıyor
             elif day_name == 'Cumartesi' and 'needs_saturday' in incomplete_pairings:
                 return False  # Perşembe var, Cumartesi veriliyor - eşleştirme tamamlanıyor
-            elif day_name == 'Pazartesi' and 'needs_monday' in incomplete_pairings:
-                return False  # Pazar var, Pazartesi veriliyor - eşleştirme tamamlanıyor
+            elif day_name == 'Cuma' and 'needs_friday' in incomplete_pairings:
+                return False  # Pazar var, Cuma veriliyor - eşleştirme tamamlanıyor
             elif day_name == 'Pazar' and 'needs_sunday' in incomplete_pairings:
-                return False  # Pazartesi var, Pazar veriliyor - eşleştirme tamamlanıyor
+                return False  # Cuma var, Pazar veriliyor - eşleştirme tamamlanıyor
             else:
                 return True
         
@@ -345,18 +345,18 @@ class DutyScheduler:
         elif day_name == 'Pazar':
             import calendar
             days_in_month = calendar.monthrange(year, month)[1]
-            future_mondays = []
+            future_fridays = []
             for day in range(target_date.day + 1, days_in_month + 1):
                 test_date = date(year, month, day)
-                if test_date.weekday() == 0:  # Pazartesi = 0
-                    future_mondays.append(test_date)
+                if test_date.weekday() == 4:  # Cuma = 4
+                    future_fridays.append(test_date)
             
-            if not future_mondays:
+            if not future_fridays:
                 return True
             
-            return False  # Gelecekte Pazartesi bulunabilir
+            return False  # Gelecekte Cuma bulunabilir
             
-        elif day_name == 'Pazartesi':
+        elif day_name == 'Cuma':
             import calendar
             days_in_month = calendar.monthrange(year, month)[1]
             future_sundays = []
@@ -523,7 +523,7 @@ class DutyScheduler:
         day_value_score = day_value * 1000
         
         if current_monthly_count < min_duties:
-            min_max_score = 800
+            min_max_score = 1200  # Higher priority for below minimum
         elif current_monthly_count >= max_duties:
             min_max_score = -2000
         else:
@@ -561,10 +561,10 @@ class DutyScheduler:
         elif day_name == 'Perşembe' and 'Cumartesi' in person_days:
             bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
         
-        elif day_name == 'Pazar' and 'Pazartesi' in person_days:
+        elif day_name == 'Pazar' and 'Cuma' in person_days:
             bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
         
-        elif day_name == 'Pazartesi' and 'Pazar' in person_days:
+        elif day_name == 'Cuma' and 'Pazar' in person_days:
             bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
         
         incomplete_pairings = []
@@ -573,19 +573,19 @@ class DutyScheduler:
             incomplete_pairings.append('needs_thursday')
         if 'Perşembe' in person_days and 'Cumartesi' not in person_days:
             incomplete_pairings.append('needs_saturday')
-        if 'Pazar' in person_days and 'Pazartesi' not in person_days:
-            incomplete_pairings.append('needs_monday')
-        if 'Pazartesi' in person_days and 'Pazar' not in person_days:
+        if 'Pazar' in person_days and 'Cuma' not in person_days:
+            incomplete_pairings.append('needs_friday')
+        if 'Cuma' in person_days and 'Pazar' not in person_days:
             incomplete_pairings.append('needs_sunday')
         
-        if incomplete_pairings and day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Pazartesi']:
+        if incomplete_pairings and day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Cuma']:
             if not ((day_name == 'Perşembe' and 'needs_thursday' in incomplete_pairings) or
                     (day_name == 'Cumartesi' and 'needs_saturday' in incomplete_pairings) or
-                    (day_name == 'Pazartesi' and 'needs_monday' in incomplete_pairings) or
+                    (day_name == 'Cuma' and 'needs_friday' in incomplete_pairings) or
                     (day_name == 'Pazar' and 'needs_sunday' in incomplete_pairings)):
                 bonus -= 2000  # Büyük ceza
         
-        elif day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Pazartesi']:
+        elif day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Cuma']:
             if day_name not in person_days:
                 bonus += 100  # İlk eşleştirme başlatma teşviki
         
@@ -601,7 +601,7 @@ class DutyScheduler:
         2.1-Max ve Min Sayılarına uyulacak (strict enforcement)
         2.2-Gün sayısı baz alınır (percentage-based allocation)
         3-C.tesi yazılana perşembe yazılır
-        4-Pazar yazılana pazartesi yazılır (corrected from cuma)
+        4-Pazar yazılana cuma yazılır (corrected pairing rule)
         5-pazar yazılna c.tesi yazılmaz / ctesi yazılana pazar yazılmaz
         6-gün değerleri baz alınır (day values primary)
         + Ramazan-Kurban çapraz atama önleme
@@ -657,7 +657,9 @@ class DutyScheduler:
             eligible_personnel = []
             
             for person_id in personnel_ids:
-                if monthly_counts[person_id] >= max_duties:
+                if monthly_counts[person_id] < min_duties:
+                    pass  # Continue to eligibility checks
+                elif monthly_counts[person_id] >= max_duties:
                     continue
                 
                 if (person_id in exemption_dict and current_date in exemption_dict[person_id]):
