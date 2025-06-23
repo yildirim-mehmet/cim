@@ -26,6 +26,22 @@ class DutyScheduler:
         conn.close()
         return result
     
+    def get_all_personnel_for_exemptions(self, year, month):
+        """Mazeret kuralları için tüm personeli getirir (aktif/pasif fark etmez)"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT DISTINCT p.id, p.ad, p.statu, p.Aktif
+            FROM Personel p
+            INNER JOIN Mazeret m ON p.id = m.personelId
+            WHERE strftime('%Y-%m', m.tarih) = ? AND m.tut = 1
+        """, (f"{year:04d}-{month:02d}",))
+        
+        mandatory_personnel = cursor.fetchall()
+        conn.close()
+        return mandatory_personnel
+    
     def get_day_values(self):
         """Gün değerlerini getirir"""
         conn = self.db.get_connection()
@@ -50,6 +66,8 @@ class DutyScheduler:
     
     def get_exemptions(self, year, month):
         """Belirtilen ay için mazeretleri getirir"""
+        from datetime import datetime
+        
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -59,7 +77,13 @@ class DutyScheduler:
         """, (f"{year:04d}-{month:02d}",))
         result = cursor.fetchall()
         conn.close()
-        return result
+        
+        converted_exemptions = []
+        for person_id, date_str, tut_value in result:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+            converted_exemptions.append((person_id, date_obj, tut_value))
+        
+        return converted_exemptions
     
     def get_personnel_duty_stats(self, personnel_ids):
         """Personel nöbet istatistiklerini getirir"""
@@ -615,6 +639,13 @@ class DutyScheduler:
         exemptions = self.get_exemptions(year, month)
         
         personnel_ids = [p[0] for p in personnel]
+        
+        mandatory_personnel = self.get_all_personnel_for_exemptions(year, month)
+        for person_id, name, status, aktif in mandatory_personnel:
+            if person_id not in personnel_ids:
+                personnel_ids.append(person_id)
+                personnel.append((person_id, name, status))
+        
         stats = self.get_personnel_duty_stats(personnel_ids)
         
         total_count = sum(s['count'] for s in stats.values())
@@ -627,7 +658,7 @@ class DutyScheduler:
         holiday_dict = {date.fromisoformat(h[3]): h[1] for h in holidays}
         exemption_dict = defaultdict(dict)
         for e in exemptions:
-            exemption_dict[e[0]][date.fromisoformat(e[1])] = e[2]
+            exemption_dict[e[0]][e[1]] = e[2]  # e[1] is already a date object
         
         days_in_month = calendar.monthrange(year, month)[1]
         
@@ -654,9 +685,25 @@ class DutyScheduler:
         monthly_counts = {pid: 0 for pid in personnel_ids}
         
         for current_date, day_name, day_info in all_days:
+            mandatory_person = None
+            for person_id in personnel_ids:
+                if (person_id in exemption_dict and 
+                    current_date in exemption_dict[person_id] and 
+                    exemption_dict[person_id][current_date] == 1):
+                    mandatory_person = person_id
+                    break
+            
+            if mandatory_person:
+                schedule.append((current_date, mandatory_person, day_name))
+                monthly_counts[mandatory_person] += 1
+                stats[mandatory_person]['count'] += 1
+                stats[mandatory_person]['total_value'] += day_info['value']
+                continue
+            
             eligible_personnel = []
             
             for person_id in personnel_ids:
+                
                 if monthly_counts[person_id] < min_duties:
                     pass  # Continue to eligibility checks
                 elif monthly_counts[person_id] >= max_duties:
