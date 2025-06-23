@@ -84,6 +84,42 @@ def test_all_constraints():
     else:
         print(f"   ❌ FAIL: {pairing_violations} pairing violations")
     
+    print(f"\n1.1. EVERY DAY ASSIGNMENT:")
+    unassigned_days = 0
+    for scheduled_date, person_id, _ in schedule:
+        if person_id is None:
+            unassigned_days += 1
+    
+    if unassigned_days == 0:
+        print("   ✅ PASS: Every day has assignment")
+    else:
+        print(f"   ❌ FAIL: {unassigned_days} days unassigned")
+    
+    print(f"\n1.2.2. WEEKEND DISTRIBUTION:")
+    weekend_violations = 0
+    weekend_assignments = {}
+    
+    for scheduled_date, person_id, day_name in schedule:
+        if person_id and day_name in ['Cumartesi', 'Pazar']:
+            if person_id not in weekend_assignments:
+                weekend_assignments[person_id] = {'Cumartesi': 0, 'Pazar': 0}
+            weekend_assignments[person_id][day_name] += 1
+    
+    for person_id, assignments in weekend_assignments.items():
+        total_weekends = assignments['Cumartesi'] + assignments['Pazar']
+        if total_weekends > 2:
+            weekend_violations += 1
+            print(f"   ❌ Person {person_id}: {total_weekends} weekend duties (max 2)")
+        elif total_weekends == 2:
+            if assignments['Cumartesi'] == 2 or assignments['Pazar'] == 2:
+                weekend_violations += 1
+                print(f"   ❌ Person {person_id}: Same weekend type twice")
+    
+    if weekend_violations == 0:
+        print("   ✅ PASS: Weekend distribution rules satisfied")
+    else:
+        print(f"   ❌ FAIL: {weekend_violations} weekend violations")
+
     print(f"\n6. DAY VALUES PRIORITIZATION:")
     high_value_days = []
     for scheduled_date, person_id, day_name in schedule:
@@ -93,7 +129,7 @@ def test_all_constraints():
     print(f"   High-value day assignments: {len(high_value_days)}")
     print("   ✅ PASS: Day values considered in assignment")
     
-    total_violations = len(consecutive) + violations + pairing_violations
+    total_violations = len(consecutive) + violations + pairing_violations + unassigned_days + weekend_violations
     print(f"\n" + "=" * 60)
     print(f"OVERALL CONSTRAINT COMPLIANCE:")
     print(f"Total violations: {total_violations}")
