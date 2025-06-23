@@ -264,58 +264,113 @@ class DutyScheduler:
         return False
 
     def needs_enhanced_day_pairing(self, person_id, target_date, day_name, schedule, year, month):
-        """Gelişmiş gün eşleştirme kuralları kontrolü"""
+        """
+        ULTRA-RESTRICTIVE Gün eşleştirme kontrolü - Tamamlanmamış eşleştirmeleri engelle
+        
+        Bu metod artık çok katı: Eğer bir kişinin tamamlanmamış eşleştirmesi varsa,
+        sadece o eşleştirmeyi tamamlayacak günler verilebilir. Yeni eşleştirme başlatılamaz.
+        
+        Kurallar:
+        1-Cumartesi yazılmışsa Perşembe Yazılmalı (aynı ay farklı hafta)
+        2-Perşembe yazılmışsa Cumartesi Yazılmalı (aynı ay farklı hafta)  
+        3-Pazar Yazılmışsa Pazartesi Yazılmalı (aynı ay farklı hafta)
+        4-Pazartesi yazılmışsa Pazar yazılmalı (aynı ay farklı hafta)
+        
+        Returns: True - Eşleştirme gereksinimi var (atama yapılamaz), False - Eşleştirme tamam (atama yapılabilir)
+        """
+        
         target_week = target_date.isocalendar()[1]
         
+        person_days = []
+        for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.year == year and 
+                scheduled_date.month == month):
+                person_days.append(scheduled_day_name)
+        
+        incomplete_pairings = []
+        
+        if 'Cumartesi' in person_days and 'Perşembe' not in person_days:
+            incomplete_pairings.append('needs_thursday')
+        
+        if 'Perşembe' in person_days and 'Cumartesi' not in person_days:
+            incomplete_pairings.append('needs_saturday')
+        
+        if 'Pazar' in person_days and 'Pazartesi' not in person_days:
+            incomplete_pairings.append('needs_monday')
+        
+        if 'Pazartesi' in person_days and 'Pazar' not in person_days:
+            incomplete_pairings.append('needs_sunday')
+        
+        if incomplete_pairings:
+            if day_name == 'Perşembe' and 'needs_thursday' in incomplete_pairings:
+                return False  # Cumartesi var, Perşembe veriliyor - eşleştirme tamamlanıyor
+            elif day_name == 'Cumartesi' and 'needs_saturday' in incomplete_pairings:
+                return False  # Perşembe var, Cumartesi veriliyor - eşleştirme tamamlanıyor
+            elif day_name == 'Pazartesi' and 'needs_monday' in incomplete_pairings:
+                return False  # Pazar var, Pazartesi veriliyor - eşleştirme tamamlanıyor
+            elif day_name == 'Pazar' and 'needs_sunday' in incomplete_pairings:
+                return False  # Pazartesi var, Pazar veriliyor - eşleştirme tamamlanıyor
+            else:
+                return True
+        
         if day_name == 'Cumartesi':
-            has_thursday = False
-            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
-                if (scheduled_person == person_id and 
-                    scheduled_date.year == year and 
-                    scheduled_date.month == month and
-                    scheduled_day_name == 'Perşembe' and
-                    scheduled_date.isocalendar()[1] != target_week):
-                    has_thursday = True
-                    break
-            return not has_thursday
+            import calendar
+            days_in_month = calendar.monthrange(year, month)[1]
+            future_thursdays = []
+            for day in range(target_date.day + 1, days_in_month + 1):
+                test_date = date(year, month, day)
+                if test_date.weekday() == 3:  # Perşembe = 3
+                    future_thursdays.append(test_date)
+            
+            if not future_thursdays:
+                return True
+            
+            return False  # Gelecekte Perşembe bulunabilir
             
         elif day_name == 'Perşembe':
-            has_saturday = False
-            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
-                if (scheduled_person == person_id and 
-                    scheduled_date.year == year and 
-                    scheduled_date.month == month and
-                    scheduled_day_name == 'Cumartesi' and
-                    scheduled_date.isocalendar()[1] != target_week):
-                    has_saturday = True
-                    break
-            return not has_saturday
+            import calendar
+            days_in_month = calendar.monthrange(year, month)[1]
+            future_saturdays = []
+            for day in range(target_date.day + 1, days_in_month + 1):
+                test_date = date(year, month, day)
+                if test_date.weekday() == 5:  # Cumartesi = 5
+                    future_saturdays.append(test_date)
             
-        elif day_name == 'Pazartesi':
-            has_sunday = False
-            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
-                if (scheduled_person == person_id and 
-                    scheduled_date.year == year and 
-                    scheduled_date.month == month and
-                    scheduled_day_name == 'Pazar' and
-                    scheduled_date.isocalendar()[1] != target_week):
-                    has_sunday = True
-                    break
-            return not has_sunday
+            if not future_saturdays:
+                return True
+            
+            return False  # Gelecekte Cumartesi bulunabilir
             
         elif day_name == 'Pazar':
-            has_monday = False
-            for scheduled_date, scheduled_person, scheduled_day_name in schedule:
-                if (scheduled_person == person_id and 
-                    scheduled_date.year == year and 
-                    scheduled_date.month == month and
-                    scheduled_day_name == 'Pazartesi' and
-                    scheduled_date.isocalendar()[1] != target_week):
-                    has_monday = True
-                    break
-            return not has_monday
+            import calendar
+            days_in_month = calendar.monthrange(year, month)[1]
+            future_mondays = []
+            for day in range(target_date.day + 1, days_in_month + 1):
+                test_date = date(year, month, day)
+                if test_date.weekday() == 0:  # Pazartesi = 0
+                    future_mondays.append(test_date)
             
-        return False
+            if not future_mondays:
+                return True
+            
+            return False  # Gelecekte Pazartesi bulunabilir
+            
+        elif day_name == 'Pazartesi':
+            import calendar
+            days_in_month = calendar.monthrange(year, month)[1]
+            future_sundays = []
+            for day in range(target_date.day + 1, days_in_month + 1):
+                test_date = date(year, month, day)
+                if test_date.weekday() == 6:  # Pazar = 6
+                    future_sundays.append(test_date)
+            
+            if not future_sundays:
+                return True
+            
+            return False  # Gelecekte Pazar bulunabilir
+        
+        return False  # Eşleştirme gerektirmeyen günler için sorun yok
 
     def has_sunday_saturday_mutual_exclusion(self, person_id, target_date, day_name, schedule, year, month):
         """5-pazar yazılna c.tesi yazılmaz / ctesi yazılana pazar yazılmaz"""
@@ -338,6 +393,8 @@ class DutyScheduler:
         1.2.2-Hafta sonu günlerini bir kişiye 1 yaz, eğer hafta sonu sayısı nöbet yazılacak kişiden çok ise 
         ancak o zaman 2 yaz ama biri cumartesi diğeri pazar olsun
         """
+        import calendar
+        
         if day_name not in ['Cumartesi', 'Pazar']:
             return False
         
@@ -356,25 +413,28 @@ class DutyScheduler:
                 elif scheduled_day_name == 'Pazar':
                     has_sunday = True
         
-        if person_weekend_count >= 1:
+        if person_weekend_count == 0:
+            return False
+        
+        if person_weekend_count == 1:
             days_in_month = calendar.monthrange(year, month)[1]
             total_weekends = 0
             for day in range(1, days_in_month + 1):
                 test_date = date(year, month, day)
-                if test_date.weekday() in [5, 6]:
+                if test_date.weekday() in [5, 6]:  # Saturday=5, Sunday=6
                     total_weekends += 1
             
             personnel = self.get_active_personnel()
             total_personnel = len(personnel)
             
-            if total_weekends > total_personnel and person_weekend_count == 1:
+            if total_weekends > total_personnel:
                 if (day_name == 'Cumartesi' and has_saturday) or (day_name == 'Pazar' and has_sunday):
-                    return True
-                return False
+                    return True  # Block same type
+                return False  # Allow different type (Saturday+Sunday)
             else:
-                return True
+                return True  # Block 2nd weekend when weekends <= personnel
         
-        return False
+        return True
 
     def ensure_every_day_assignment(self, schedule, year, month):
         """
@@ -481,6 +541,56 @@ class DutyScheduler:
         
         return total_score
     
+    def calculate_pairing_completion_bonus(self, person_id, day_name, schedule, year, month):
+        """
+        ENHANCED Gün eşleştirme tamamlama bonusu hesaplama
+        Eşleştirme tamamlayan atamalara çok yüksek bonus ver
+        """
+        person_days = []
+        for scheduled_date, scheduled_person, scheduled_day_name in schedule:
+            if (scheduled_person == person_id and 
+                scheduled_date.year == year and 
+                scheduled_date.month == month):
+                person_days.append(scheduled_day_name)
+        
+        bonus = 0
+        
+        if day_name == 'Cumartesi' and 'Perşembe' in person_days:
+            bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
+        
+        elif day_name == 'Perşembe' and 'Cumartesi' in person_days:
+            bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
+        
+        elif day_name == 'Pazar' and 'Pazartesi' in person_days:
+            bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
+        
+        elif day_name == 'Pazartesi' and 'Pazar' in person_days:
+            bonus += 1500  # Çok yüksek eşleştirme tamamlama bonusu
+        
+        incomplete_pairings = []
+        
+        if 'Cumartesi' in person_days and 'Perşembe' not in person_days:
+            incomplete_pairings.append('needs_thursday')
+        if 'Perşembe' in person_days and 'Cumartesi' not in person_days:
+            incomplete_pairings.append('needs_saturday')
+        if 'Pazar' in person_days and 'Pazartesi' not in person_days:
+            incomplete_pairings.append('needs_monday')
+        if 'Pazartesi' in person_days and 'Pazar' not in person_days:
+            incomplete_pairings.append('needs_sunday')
+        
+        if incomplete_pairings and day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Pazartesi']:
+            if not ((day_name == 'Perşembe' and 'needs_thursday' in incomplete_pairings) or
+                    (day_name == 'Cumartesi' and 'needs_saturday' in incomplete_pairings) or
+                    (day_name == 'Pazartesi' and 'needs_monday' in incomplete_pairings) or
+                    (day_name == 'Pazar' and 'needs_sunday' in incomplete_pairings)):
+                bonus -= 2000  # Büyük ceza
+        
+        elif day_name in ['Cumartesi', 'Perşembe', 'Pazar', 'Pazartesi']:
+            if day_name not in person_days:
+                bonus += 100  # İlk eşleştirme başlatma teşviki
+        
+        return bonus
+    
     def generate_schedule(self, year, month, min_duties=3, max_duties=4):
         """
         Kapsamlı zamanlama algoritması - Tüm kısıtlamalar dahil
@@ -586,6 +696,10 @@ class DutyScheduler:
                     monthly_counts[person_id], min_duties, max_duties
                 )
                 
+                pairing_bonus = self.calculate_pairing_completion_bonus(
+                    person_id, day_name, schedule, year, month)
+                priority_score += pairing_bonus
+                
                 if (person_id in exemption_dict and current_date in exemption_dict[person_id] and 
                     exemption_dict[person_id][current_date] == 1):
                     priority_score += 2000
@@ -614,11 +728,21 @@ class DutyScheduler:
                     if self.has_consecutive_days_conflict(person_id, current_date, schedule):
                         continue
                     
+                    if self.has_sunday_saturday_mutual_exclusion(person_id, current_date, day_name, schedule, year, month):
+                        continue
+                    
+                    if self.has_weekend_distribution_conflict(person_id, current_date, day_name, schedule, year, month):
+                        continue
+                    
                     priority_score = self.calculate_enhanced_priority_score(
                         person_id, stats, total_avg_count, total_avg_value, 
                         current_date, day_name, schedule, year, month,
                         monthly_counts[person_id], min_duties, max_duties
                     )
+                    
+                    pairing_bonus = self.calculate_pairing_completion_bonus(
+                        person_id, day_name, schedule, year, month)
+                    priority_score += pairing_bonus
                     
                     fallback_personnel.append((person_id, priority_score))
                 
@@ -646,6 +770,8 @@ class DutyScheduler:
                                 break
         
         return schedule
+    
+
     
     def generate_schedule_main(self, year, month, min_duties=0, max_duties=10):
         """Ana nöbet programı oluşturma metodu"""
