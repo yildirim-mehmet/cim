@@ -271,64 +271,176 @@ class DutySchedulerGUI:
                     messagebox.showwarning("Uyarı", "Aynı personel seçildi!")
                     return
                 
-                conn = self.db.get_connection()
-                cursor = conn.cursor()
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                day_name = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'][target_date.weekday()]
                 
-                cursor.execute("""
-                    SELECT id, personelId, gunDegerId, ad, deger, esTarih, yenTarih
-                    FROM Nobet 
-                    WHERE tarih = ?
-                """, (date_str,))
+                is_mazeret, tut_value = self.scheduler.is_mazeret_entry(new_personel_id, target_date, self.selected_year, self.selected_month)
                 
-                nobet_record = cursor.fetchone()
+                if not is_mazeret:
+                    warning_result = messagebox.askyesno(
+                        "Mazeret Dışı Değişiklik Uyarısı",
+                        f"⚠️ UYARI: MAZERET GİRİŞLERİ DIŞINDA BİR DEĞİŞİKLİK YAPILIYOR!\n\n"
+                        f"Tarih: {date_str}\n"
+                        f"Yeni Personel: {new_personel_name}\n\n"
+                        f"Bu değişiklik Mazeret tablosunda kayıtlı değildir.\n"
+                        f"Devam etmek istiyor musunuz?"
+                    )
+                    
+                    if not warning_result:
+                        return
                 
-                if nobet_record:
-                    cursor.execute("""
-                        UPDATE Nobet 
-                        SET personelId = ?, degisiklik = 1, esTarih = ?, yenTarih = ?
-                        WHERE id = ?
-                    """, (new_personel_id, date_str, date_str, nobet_record[0]))
-                    
-                    conn.commit()
-                    conn.close()
-                    
-                    messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{current_person} → {new_personel_name}")
-                    
-                    self.load_existing_schedule()
-                    change_window.destroy()
-                else:
-                    conn.close()
-                    
-                    if hasattr(self, 'current_schedule') and self.current_schedule:
-                        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        for i, (scheduled_date, person_id, day_type) in enumerate(self.current_schedule):
-                            if scheduled_date == target_date:
-                                self.current_schedule[i] = (scheduled_date, new_personel_id, day_type)
-                                break
-                        
-                        self.generate_schedule_display()
-                        
-                        messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{current_person} → {new_personel_name}\n(Değişiklikleri kaydetmeyi unutmayın!)")
-                        change_window.destroy()
-                    else:
-                        messagebox.showerror("Hata", "Önce nöbet programını hazırlayın!")
+                current_schedule = getattr(self, 'current_schedule', [])
+                violations = self.scheduler.check_duty_change_constraints(
+                    new_personel_id, target_date, day_name, current_schedule, 
+                    self.selected_year, self.selected_month
+                )
+                
+                if violations:
+                    if not self.show_constraint_override_dialog(violations, new_personel_name, date_str):
+                        return
+                
+                self.execute_duty_change(new_personel_id, new_personel_name, date_str, change_window)
                 
             except Exception as e:
                 messagebox.showerror("Hata", f"Nöbet değiştirme sırasında hata: {str(e)}")
         
         def cancel_change():
             change_window.destroy()
+    
+    def show_constraint_override_dialog(self, violations, person_name, date_str):
+        """Kısıtlama ihlali uyarısı ve geçersiz kılma seçenekleri"""
+        override_window = tk.Toplevel(self.root)
+        override_window.title("Kısıtlama İhlali Uyarısı")
+        override_window.geometry("600x500")
+        override_window.resizable(True, True)
+        override_window.grab_set()
         
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=3, column=0, columnspan=2, pady=(20, 0))
+        main_frame = ttk.Frame(override_window, padding="15")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        override_window.columnconfigure(0, weight=1)
+        override_window.rowconfigure(0, weight=1)
         
-        ttk.Button(btn_frame, text="Değiştir", command=change_duty).grid(row=0, column=0, padx=5)
-        ttk.Button(btn_frame, text="İptal", command=cancel_change).grid(row=0, column=1, padx=5)
+        header_label = ttk.Label(main_frame, text="⚠️ OLASILIKSIZ BİR GİRİŞ TESPİT EDİLDİ!", 
+                               font=('Arial', 14, 'bold'), foreground='red')
+        header_label.grid(row=0, column=0, columnspan=2, pady=(0, 15))
         
-        change_window.transient(self.root)
-        change_window.grab_set()
+        details_text = f"Personel: {person_name}\nTarih: {date_str}\n\n"
+        details_label = ttk.Label(main_frame, text=details_text, font=('Arial', 10))
+        details_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
         
-        new_personel_combo.focus()
+        violations_label = ttk.Label(main_frame, text="İhlal Edilen Kısıtlamalar:", 
+                                   font=('Arial', 12, 'bold'))
+        violations_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+        
+        violations_frame = ttk.Frame(main_frame)
+        violations_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
+        
+        violations_text = tk.Text(violations_frame, height=8, width=70, wrap=tk.WORD)
+        scrollbar = ttk.Scrollbar(violations_frame, orient=tk.VERTICAL, command=violations_text.yview)
+        violations_text.configure(yscrollcommand=scrollbar.set)
+        
+        violations_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        violations_frame.columnconfigure(0, weight=1)
+        violations_frame.rowconfigure(0, weight=1)
+        
+        for i, violation in enumerate(violations, 1):
+            violations_text.insert(tk.END, f"{i}. {violation}\n\n")
+        violations_text.config(state=tk.DISABLED)
+        
+        override_label = ttk.Label(main_frame, text="Geçersiz Kılma Seçenekleri:", 
+                                 font=('Arial', 12, 'bold'))
+        override_label.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        result = {'continue': False}
+        
+        def override_day_pairing():
+            result['continue'] = messagebox.askyesno(
+                "Gün Eşleştirme Kuralını Geçersiz Kıl",
+                "⚠️ GÜN EŞLEŞTIRME KURALI DEVRE DIŞI BIRAKILACAK!\n\n"
+                "Bu işlem Perşembe↔Cumartesi ve Pazar↔Cuma eşleştirme kurallarını "
+                "bu atama için geçersiz kılacaktır.\n\n"
+                "Devam etmek istiyor musunuz?"
+            )
+            if result['continue']:
+                override_window.destroy()
+        
+        def override_year_points():
+            result['continue'] = messagebox.askyesno(
+                "Yıllık Puan Durumunu Geçersiz Kıl",
+                "⚠️ YILLIK PUAN DURUMU DEVRE DIŞI BIRAKILACAK!\n\n"
+                "Bu işlem yıllık puan adaleti ve dağıtım kurallarını "
+                "bu atama için geçersiz kılacaktır.\n\n"
+                "UYARI: Bu işlem sistem dengesini bozabilir!\n\n"
+                "Devam etmek istiyor musunuz?"
+            )
+            if result['continue']:
+                override_window.destroy()
+        
+        def cancel_change():
+            result['continue'] = False
+            override_window.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=(15, 0))
+        
+        ttk.Button(button_frame, text="Gün Eşleştirme Kuralını Geçersiz Kıl", 
+                 command=override_day_pairing).grid(row=0, column=0, padx=(0, 10))
+        ttk.Button(button_frame, text="Yıllık Puan Durumunu Geçersiz Kıl", 
+                 command=override_year_points).grid(row=0, column=1, padx=(0, 10))
+        ttk.Button(button_frame, text="İptal", command=cancel_change).grid(row=0, column=2)
+        
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        
+        override_window.wait_window()
+        return result['continue']
+    
+    def execute_duty_change(self, new_personel_id, new_personel_name, date_str, change_window=None):
+        """Nöbet değişikliğini gerçekleştirir"""
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, personelId, gunDegerId, ad, deger, esTarih, yenTarih
+            FROM Nobet 
+            WHERE tarih = ?
+        """, (date_str,))
+        
+        nobet_record = cursor.fetchone()
+        
+        if nobet_record:
+            cursor.execute("""
+                UPDATE Nobet 
+                SET personelId = ?, degisiklik = 1, esTarih = ?, yenTarih = ?
+                WHERE id = ?
+            """, (new_personel_id, date_str, date_str, nobet_record[0]))
+            
+            conn.commit()
+            conn.close()
+            
+            messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{self.scheduler.get_person_name(nobet_record[1])} → {new_personel_name}")
+            
+            self.load_existing_schedule()
+            if change_window:
+                change_window.destroy()
+        else:
+            conn.close()
+            
+            if hasattr(self, 'current_schedule') and self.current_schedule:
+                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                for i, (scheduled_date, person_id, day_type) in enumerate(self.current_schedule):
+                    if scheduled_date == target_date:
+                        self.current_schedule[i] = (scheduled_date, new_personel_id, day_type)
+                        break
+                
+                self.generate_schedule_display()
+                
+                messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{new_personel_name}\n(Değişiklikleri kaydetmeyi unutmayın!)")
+                if change_window:
+                    change_window.destroy()
+            else:
+                messagebox.showerror("Hata", "Önce nöbet programını hazırlayın!")
     
     def load_initial_data(self):
         self.db.check_and_populate_sample_data()
