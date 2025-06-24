@@ -977,3 +977,35 @@ class DutyScheduler:
                   if scheduled_person == person_id and 
                      scheduled_date.year == year and 
                      scheduled_date.month == month)
+
+    def check_duty_change_constraints(self, person_id, target_date, day_name, existing_schedule, year, month):
+        """Nöbet değişikliği için tüm kısıtlamaları kontrol eder"""
+        violations = []
+        
+        if self.has_consecutive_days_conflict(person_id, target_date, existing_schedule):
+            violations.append("Ardışık gün kısıtlaması: Aynı kişiye peş peşe günlerde nöbet verilemez")
+        
+        if self.has_weekend_distribution_conflict(person_id, target_date, day_name, existing_schedule, year, month):
+            violations.append("Hafta sonu dağıtım kısıtlaması: Hafta sonu günleri adaletli dağıtılmalıdır")
+        
+        if self.needs_enhanced_day_pairing(person_id, target_date, day_name, existing_schedule, year, month):
+            violations.append("Gün eşleştirme kısıtlaması: Perşembe↔Cumartesi, Pazar↔Cuma eşleştirmeleri gereklidir")
+        
+        if self.has_critical_day_same_value_conflict(person_id, target_date, day_name, existing_schedule, year, month):
+            violations.append("Kritik gün kısıtlaması: Aynı kişiye aynı kritik günde birden fazla nöbet verilemez")
+        
+        if self.has_same_day_priority_conflict(person_id, target_date, day_name, existing_schedule, year, month):
+            violations.append("Aynı gün öncelik kısıtlaması: Gün öncelik sırası ihlal edildi")
+        
+        if self.has_sunday_saturday_mutual_exclusion(person_id, target_date, day_name, existing_schedule, year, month):
+            violations.append("Pazar-Cumartesi dışlama kısıtlaması: Aynı kişiye aynı ayda hem Pazar hem Cumartesi verilemez")
+        
+        return violations
+    
+    def is_mazeret_entry(self, person_id, target_date, year, month):
+        """Belirtilen tarih ve kişi için Mazeret girişi olup olmadığını kontrol eder"""
+        exemptions = self.get_exemptions(year, month)
+        for exemption_person_id, exemption_date, tut_value in exemptions:
+            if exemption_person_id == person_id and exemption_date == target_date:
+                return True, tut_value
+        return False, None
