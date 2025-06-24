@@ -299,13 +299,24 @@ class DutySchedulerGUI:
                     if not self.show_constraint_override_dialog(violations, new_personel_name, date_str):
                         return
                 
-                self.execute_duty_change(new_personel_id, new_personel_name, date_str, change_window)
+                self.execute_duty_change(new_personel_id, new_personel_name, date_str, change_window, current_person)
                 
             except Exception as e:
                 messagebox.showerror("Hata", f"Nöbet değiştirme sırasında hata: {str(e)}")
         
         def cancel_change():
             change_window.destroy()
+        
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=(20, 0))
+        
+        ttk.Button(btn_frame, text="Değiştir", command=change_duty).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="İptal", command=cancel_change).grid(row=0, column=1, padx=5)
+        
+        change_window.transient(self.root)
+        change_window.grab_set()
+        
+        new_personel_combo.focus()
     
     def show_constraint_override_dialog(self, violations, person_name, date_str):
         """Kısıtlama ihlali uyarısı ve geçersiz kılma seçenekleri"""
@@ -396,7 +407,7 @@ class DutySchedulerGUI:
         override_window.wait_window()
         return result['continue']
     
-    def execute_duty_change(self, new_personel_id, new_personel_name, date_str, change_window=None):
+    def execute_duty_change(self, new_personel_id, new_personel_name, date_str, change_window=None, current_person=None):
         """Nöbet değişikliğini gerçekleştirir"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
@@ -436,7 +447,7 @@ class DutySchedulerGUI:
                 
                 self.generate_schedule_display()
                 
-                messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{new_personel_name}\n(Değişiklikleri kaydetmeyi unutmayın!)")
+                messagebox.showinfo("Başarılı", f"Nöbet değiştirildi!\n{current_person or 'Önceki'} → {new_personel_name}\n(Değişiklikleri kaydetmeyi unutmayın!)")
                 if change_window:
                     change_window.destroy()
             else:
