@@ -1833,7 +1833,7 @@ class DutySchedulerGUI:
         
         info_content = """
 NÖBET PROGRAMI YÖNETİM SİSTEMİ
-MEBS personeli için gelişmiş nöbet programı yönetim sistemi
+NÖBET personeli için gelişmiş nöbet programı yönetim sistemi
 Max-Min Nöebt değeri kişinin gün/puan değerlerine göre farklılık gösterebilir, 
 Ardışık gün nöbeti eski girilen koşullara göre devredışı kaldığı durumlar olabilir,
 Hazırlanan Nöbetleri tekrar KONTROL EDİN ❗
@@ -1968,9 +1968,9 @@ Hafta Sonu:
 • Gelişmiş takvim seçici
 • Sağ tık menüleri ile hızlı düzenleme
 
-Bu sistem, MEBS personelinin nöbet programlarını adil, verimli ve kolay bir şekilde yönetmek için tasarlanmıştır. Tüm işlemler kullanıcı dostu arayüz ile gerçekleştirilir.
+Bu sistem, Nöbet personelinin nöbet programlarını adil, verimli ve kolay bir şekilde yönetmek için tasarlanmıştır. Tüm işlemler kullanıcı dostu arayüz ile gerçekleştirilir.
 
-Mu.Mrk.Ks.
+Bilgi Sistemleri 
 """
         
         text_widget.insert(tk.END, info_content)
