@@ -748,7 +748,7 @@ class DutySchedulerGUI:
         ttk.Label(form_frame, text="Statü:").grid(row=1, column=0, sticky=tk.W, pady=2)
         status_var = tk.StringVar()
         status_combo = ttk.Combobox(form_frame, textvariable=status_var, width=27)
-        status_combo['values'] = ('KD.BÇVŞ.', 'BÇVŞ.', 'KD.ÜÇVŞ.', 'ÜÇVŞ.', 'KD.ÇVŞ.')
+        status_combo['values'] = ('RANK5.', 'RANK4.', 'RANK3.', 'RANK2.', 'RANK1.')
         status_combo.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=2)
         
         aktif_var = tk.BooleanVar(value=True)
